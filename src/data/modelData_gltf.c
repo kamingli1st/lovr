@@ -1,9 +1,15 @@
 #include "data/modelData.h"
 #include "lib/jsmn/jsmn.h"
+#include <stdio.h>
 
 #define MAGIC_glTF 0x46546c67
 #define MAGIC_JSON 0x4e4f534a
 #define MAGIC_BIN 0x004e4942
+
+typedef struct {
+  char* string;
+  size_t length;
+} gltfString;
 
 typedef struct {
   uint32_t magic;
@@ -17,33 +23,55 @@ typedef struct {
 } gltfChunkHeader;
 
 typedef struct {
-  const char* copyright;
-  const char* generator;
-  const char* version;
-  const char* minVersion;
+  gltfString copyright;
+  gltfString generator;
+  gltfString version;
+  gltfString minVersion;
 } gltfAsset;
+
+static int nomString(const char* data, jsmntok_t* token, char** str, size_t* len) {
+  lovrAssert(token->type == JSMN_STRING, "Expected string");
+  *str = (char*) data + token->start;
+  *len = token->end - token->start;
+  return 1;
+}
+
+static int nomValue(const char* data, jsmntok_t* token, int count, int sum) {
+  if (count == 0) {
+    return sum;
+  }
+
+  switch (token->type) {
+    case JSMN_OBJECT:
+      return nomValue(data, token + 1, count - 1 + 2 * token->size, sum + 1);
+    case JSMN_ARRAY:
+      return nomValue(data, token + 1, count - 1 + token->size, sum + 1);
+    default:
+      return nomValue(data, token + 1, count - 1, sum + 1);
+  }
+}
 
 ModelData* lovrModelDataInitFromGltf(ModelData* modelData, Blob* blob) {
   uint8_t* data = blob->data;
   gltfHeader* header = (gltfHeader*) data;
   bool glb = header->magic == MAGIC_glTF;
-  uint8_t* jsonData, binData;
+  const char *jsonData, *binData;
   size_t jsonLength, binLength;
 
   if (glb) {
-    gltfChunkHeader* jsonHeader = &header[1];
+    gltfChunkHeader* jsonHeader = (gltfChunkHeader*) &header[1];
     lovrAssert(jsonHeader->type == MAGIC_JSON, "Invalid JSON header");
 
-    jsonData = &jsonHeader[1];
+    jsonData = (char*) &jsonHeader[1];
     jsonLength = jsonHeader->length;
 
-    gltfChunkHeader* binHeader = &jsonData[jsonLength];
+    gltfChunkHeader* binHeader = (gltfChunkHeader*) &jsonData[jsonLength];
     lovrAssert(binHeader->type == MAGIC_BIN, "Invalid BIN header");
 
-    binData = &binHeader[1];
+    binData = (char*) &binHeader[1];
     binLength = binHeader->length;
   } else {
-    jsonData = data;
+    jsonData = (char*) data;
     jsonLength = blob->size;
     binData = NULL;
     binLength = 0;
@@ -57,10 +85,14 @@ ModelData* lovrModelDataInitFromGltf(ModelData* modelData, Blob* blob) {
   lovrAssert(tokenCount >= 0, "Invalid JSON");
   lovrAssert(tokens[0].type == JSMN_OBJECT, "No root object");
 
-  for (int t = 1; t < tokenCount; t++) {
-    jsmntok_t* token = &tokens[t];
+  for (jsmntok_t* token = tokens + 1; token < tokens + tokenCount;) {
+    char* key;
+    size_t keyLength;
+    token += nomString(jsonData, token, &key, &keyLength);
+    printf("%.*s\n", (int) keyLength, key);
+
+    token += nomValue(jsonData, token, 1, 0);
   }
 
-hell:
   return NULL;
 }
