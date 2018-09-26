@@ -379,6 +379,7 @@ if(LOVR_ENABLE_DATA)
     src/data/audioStream.c
     src/data/blob.c
     src/data/modelData.c
+    src/data/modelData_gltf.c
     src/data/rasterizer.c
     src/data/soundData.c
     src/data/textureData.c
@@ -395,6 +396,7 @@ if(LOVR_ENABLE_DATA)
     src/lib/stb/stb_image_write.c
     src/lib/stb/stb_truetype.c
     src/lib/stb/stb_vorbis.c
+    src/lib/jsmn/jsmn.c
   )
 
   if (LOVR_USE_ASSIMP)

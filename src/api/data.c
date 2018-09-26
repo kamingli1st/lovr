@@ -44,6 +44,7 @@ static int l_lovrDataNewAudioStream(lua_State* L) {
 static int l_lovrDataNewModelData(lua_State* L) {
   Blob* blob = luax_readblob(L, 1, "Model");
   ModelData* modelData = lovrModelDataCreate(blob);
+  ModelData* modelData2 = lovrModelDataCreateFromGltf(blob);
   luax_pushobject(L, modelData);
   lovrRelease(blob);
   lovrRelease(modelData);

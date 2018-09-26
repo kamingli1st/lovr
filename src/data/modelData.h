@@ -90,6 +90,10 @@ typedef struct {
 } ModelData;
 
 ModelData* lovrModelDataInit(ModelData* modelData, Blob* blob);
+ModelData* lovrModelDataInitEmpty(ModelData* modelData);
+ModelData* lovrModelDataInitFromGltf(ModelData* modelData, Blob* blob);
 #define lovrModelDataCreate(...) lovrModelDataInit(lovrAlloc(ModelData), __VA_ARGS__)
+#define lovrModelDataCreateEmpty(...) lovrModelDataInitEmpty(lovrAlloc(ModelData), __VA_ARGS__)
+#define lovrModelDataCreateFromGltf(...) lovrModelDataInitFromGltf(lovrAlloc(ModelData), __VA_ARGS__)
 void lovrModelDataDestroy(void* ref);
 void lovrModelDataGetAABB(ModelData* modelData, float aabb[6]);
