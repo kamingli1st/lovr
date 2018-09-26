@@ -1,0 +1,1 @@
+: foreach *.lua *.ttf |> xxd -i %f > %o |> %f.h
