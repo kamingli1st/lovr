@@ -4,8 +4,10 @@ SRC += util.c
 SRC += luax.c
 SRC += lovr.c
 SRC += main.c
-SRC += api/lovr.c
+
+API += api/lovr.c
 
 RES += resources/boot.lua.h
 
-: foreach $(SRC) | $(RES) |> !cc $(CFLAGS_lua) $(CFLAGS_glfw) |> $(ROOT)/obj/%f.o $(ROOT)/<obj_exe>
+: foreach $(API) |> !cc_api |>
+: foreach $(SRC) | $(RES) |> !cc $(CFLAGS_lua) $(CFLAGS_glfw) |> $(ROOT)/obj/lovr_%B.o $(ROOT)/<obj_exe>

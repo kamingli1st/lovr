@@ -7,9 +7,6 @@ CFLAGS += -Wno-unused-parameter
 CFLAGS += -Wno-unused-variable
 CFLAGS += -I$(TUP_CWD)/src
 
-# temporary
-CFLAGS += -DLOVR_ENABLE_MATH
-
 CFLAGS_lua += `pkg-config --cflags luajit`
 CFLAGS_glfw += `pkg-config --cflags glfw3`
 
@@ -17,3 +14,5 @@ LFLAGS += `pkg-config --libs luajit`
 LFLAGS += `pkg-config --libs glfw3`
 
 !cc = |> ^ CC %f^ $(CC) -c %f -o %o $(CFLAGS) |>
+!cc_lib = |> ^ CC %f^ $(CC) -c %f -o %o $(CFLAGS) |> $(ROOT)/obj/lovr_%B.o $(ROOT)/<obj_lib>
+!cc_api = |> ^ CC %f^ $(CC) -c %f -o %o $(CFLAGS) $(CFLAGS_lua) |> $(ROOT)/obj/lovr_api_%B.o $(ROOT)/<obj_exe>
