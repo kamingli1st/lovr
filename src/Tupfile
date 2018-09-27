@@ -1,0 +1,11 @@
+include_rules
+
+SRC += util.c
+SRC += luax.c
+SRC += lovr.c
+SRC += main.c
+SRC += api/lovr.c
+
+RES += resources/boot.lua.h
+
+: foreach $(SRC) | $(RES) |> !cc $(CFLAGS_lua) $(CFLAGS_glfw) |> $(ROOT)/obj/%f.o $(ROOT)/<obj_exe>

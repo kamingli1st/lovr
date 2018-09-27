@@ -1,8 +1,10 @@
 .tup
 build
 /lovr
+/liblovr.so
 /data
 /*.lua
+obj
 src/obj
 /watch.sh
 *.glsl

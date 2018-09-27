@@ -1,0 +1,11 @@
+include_rules
+
+SRC += *.c
+SRC += ../lib/noise1234/noise1234.c
+
+API += ../api/math.c
+API += ../api/types/randomGenerator.c
+API += ../api/types/transform.c
+
+: foreach $(SRC) |> !cc |> $(ROOT)/obj/lovr_%d_%B.o $(ROOT)/<obj_lib>
+: foreach $(API) |> !cc $(CFLAGS_lua) |> $(ROOT)/obj/api/%B.o $(ROOT)/<obj_exe>

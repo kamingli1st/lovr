@@ -1,0 +1,4 @@
+include_rules
+
+: src/util.c | <obj_lib> |> ^ SO %o^ $(CC) -shared -fPIC -o %o %<obj_lib> %f |> liblovr.so
+: liblovr.so | <obj_exe> |> ^ LD %o^ $(CC) $(LFLAGS) -o %o %f %<obj_exe> |> lovr
