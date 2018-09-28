@@ -2,7 +2,6 @@ include_rules
 
 SRC += util.c
 SRC += luax.c
-SRC += lovr.c
 SRC += main.c
 
 API += api/lovr.c
