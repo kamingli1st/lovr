@@ -1,1 +1,4 @@
+include_rules
+
 : foreach *.lua *.ttf |> xxd -i %f > %o |> %f.h
+: shaders.c |> $(CC) $(CFLAGS) -c %f -o %o |> %B.o $(ROOT)/<liblovr_o>

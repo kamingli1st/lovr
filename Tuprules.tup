@@ -1,18 +1,28 @@
 ROOT = $(TUP_CWD)
 
 CC = clang
-CFLAGS += -std=c99 -pedantic
+CFLAGS += -std=c99 -D_C99_SOURCE -pedantic
 CFLAGS += -Werror -Wall -Wextra
 CFLAGS += -Wno-unused-parameter
 CFLAGS += -Wno-unused-variable
-CFLAGS += -I$(TUP_CWD)/src
+CFLAGS += -I$(ROOT)/src
 
-CFLAGS_lua += `pkg-config --cflags luajit`
-CFLAGS_glfw += `pkg-config --cflags glfw3`
+LIBS += assimp
+LIBS += glfw3
+LIBS += luajit
+LIBS += openal
+LIBS += physfs
+LIBS += ode
+LIBS += ccd
 
-LFLAGS += `pkg-config --libs luajit`
-LFLAGS += `pkg-config --libs glfw3`
+export PKG_CONFIG_PATH
+CFLAGS += `pkg-config --cflags $(LIBS)`
+LFLAGS += `pkg-config --libs-only-l --libs-only-L $(LIBS)`
+LFLAGS += -lenet
+LFLAGS += -lmsdfgen
+LFLAGS += -lstdc++
+LFLAGS += -L$(ROOT)/deps/openvr/lib/osx32
+LFLAGS += -lopenvr_api
 
-!cc = |> ^ CC %f^ $(CC) -c %f -o %o $(CFLAGS) |>
-!cc_lib = |> ^ CC %f^ $(CC) -c %f -o %o $(CFLAGS) |> $(ROOT)/obj/lovr_%B.o $(ROOT)/<obj_lib>
-!cc_api = |> ^ CC %f^ $(CC) -c %f -o %o $(CFLAGS) $(CFLAGS_lua) |> $(ROOT)/obj/lovr_api_%B.o $(ROOT)/<obj_exe>
+CFLAGS += -I$(ROOT)/deps/msdfgen
+CFLAGS += -I$(ROOT)/deps/openvr/headers

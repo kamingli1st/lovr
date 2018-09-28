@@ -1,0 +1,12 @@
+include_rules
+
+SRC += glad/*.c
+SRC += lua-enet/*.c
+SRC += lua-cjson/*.c
+SRC += map/*.c
+SRC += vec/*.c
+SRC += noise1234/*.c
+SRC += stb/*.c
+SRC += tinycthread/*.c
+
+: foreach $(SRC) |> $(CC) $(CFLAGS) -c %f -o %o |> %B.o $(ROOT)/<liblovr_o>

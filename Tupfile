@@ -1,4 +1,4 @@
 include_rules
 
-: src/util.c | <obj_lib> |> ^ SO %o^ $(CC) -shared -fPIC -o %o %<obj_lib> %f |> liblovr.so
-: liblovr.so | <obj_exe> |> ^ LD %o^ $(CC) $(LFLAGS) -o %o %f %<obj_exe> |> lovr
+: src/util.c | <liblovr_o> |> $(CC) $(LFLAGS) -shared -fPIC %f %<liblovr_o> -o %o |> liblovr.so
+: liblovr.so | <lovr_o> |> $(CC) $(LFLAGS) -pagezero_size 10000 -image_base 100000000 `pkg-config --libs luajit glfw3` %f %<lovr_o> -o %o |> lovr

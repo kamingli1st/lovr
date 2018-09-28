@@ -4,7 +4,7 @@ build
 /liblovr.so
 /data
 /*.lua
-obj
+*.o
 src/obj
 /watch.sh
 *.glsl
