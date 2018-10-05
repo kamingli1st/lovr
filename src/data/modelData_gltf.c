@@ -7,7 +7,7 @@
 #define MAGIC_BIN 0x004e4942
 
 typedef struct {
-  char* string;
+  char* data;
   size_t length;
 } gltfString;
 
@@ -23,16 +23,26 @@ typedef struct {
 } gltfChunkHeader;
 
 typedef struct {
-  gltfString copyright;
-  gltfString generator;
   gltfString version;
-  gltfString minVersion;
-} gltfAsset;
+  int accessorCount;
+  int animationCount;
+  int bufferCount;
+  int bufferViewCount;
+  int cameraCount;
+  int imageCount;
+  int materialCount;
+  int meshCount;
+  int nodeCount;
+  int samplerCount;
+  int sceneCount;
+  int skinCount;
+  int textureCount;
+} gltfInfo;
 
-static int nomString(const char* data, jsmntok_t* token, char** str, size_t* len) {
+static int nomString(const char* data, jsmntok_t* token, gltfString* string) {
   lovrAssert(token->type == JSMN_STRING, "Expected string");
-  *str = (char*) data + token->start;
-  *len = token->end - token->start;
+  string->data = (char*) data + token->start;
+  string->length = token->end - token->start;
   return 1;
 }
 
@@ -42,12 +52,9 @@ static int nomValue(const char* data, jsmntok_t* token, int count, int sum) {
   }
 
   switch (token->type) {
-    case JSMN_OBJECT:
-      return nomValue(data, token + 1, count - 1 + 2 * token->size, sum + 1);
-    case JSMN_ARRAY:
-      return nomValue(data, token + 1, count - 1 + token->size, sum + 1);
-    default:
-      return nomValue(data, token + 1, count - 1, sum + 1);
+    case JSMN_OBJECT: return nomValue(data, token + 1, count - 1 + 2 * token->size, sum + 1);
+    case JSMN_ARRAY: return nomValue(data, token + 1, count - 1 + token->size, sum + 1);
+    default: return nomValue(data, token + 1, count - 1, sum + 1);
   }
 }
 
@@ -85,14 +92,72 @@ ModelData* lovrModelDataInitFromGltf(ModelData* modelData, Blob* blob) {
   lovrAssert(tokenCount >= 0, "Invalid JSON");
   lovrAssert(tokens[0].type == JSMN_OBJECT, "No root object");
 
+  // Parse info
+  gltfInfo info = { 0 };
   for (jsmntok_t* token = tokens + 1; token < tokens + tokenCount;) {
-    char* key;
-    size_t keyLength;
-    token += nomString(jsonData, token, &key, &keyLength);
-    printf("%.*s\n", (int) keyLength, key);
+    gltfString key;
+    token += nomString(jsonData, token, &key);
+
+    if (!strncmp(key.data, "asset", key.length)) {
+      int keys = token->size;
+      token++;
+
+      for (int i = 0; i < keys; i++) {
+        gltfString assetKey;
+        token += nomString(jsonData, token, &assetKey);
+        if (!strncmp(assetKey.data, "version", assetKey.length)) {
+          token += nomString(jsonData, token, &info.version);
+        } else {
+          token += nomValue(jsonData, token, 1, 0);
+        }
+      }
+
+      continue;
+    } else if (!strncmp(key.data, "scenes", key.length)) {
+      info.sceneCount = token->size;
+    } else if (!strncmp(key.data, "nodes", key.length)) {
+      info.nodeCount = token->size;
+    } else if (!strncmp(key.data, "meshes", key.length)) {
+      info.meshCount = token->size;
+    } else if (!strncmp(key.data, "accessors", key.length)) {
+      info.accessorCount = token->size;
+    } else if (!strncmp(key.data, "materials", key.length)) {
+      info.materialCount = token->size;
+    } else if (!strncmp(key.data, "bufferViews", key.length)) {
+      info.bufferViewCount = token->size;
+    } else if (!strncmp(key.data, "buffers", key.length)) {
+      info.bufferCount = token->size;
+    } else if (!strncmp(key.data, "animations", key.length)) {
+      info.animationCount = token->size;
+    } else if (!strncmp(key.data, "images", key.length)) {
+      info.imageCount = token->size;
+    } else if (!strncmp(key.data, "samplers", key.length)) {
+      info.samplerCount = token->size;
+    } else if (!strncmp(key.data, "skins", key.length)) {
+      info.skinCount = token->size;
+    } else if (!strncmp(key.data, "textures", key.length)) {
+      info.textureCount = token->size;
+    } else if (!strncmp(key.data, "cameras", key.length)) {
+      info.cameraCount = token->size;
+    }
 
     token += nomValue(jsonData, token, 1, 0);
   }
+
+  printf("version %.*s\n", (int) info.version.length, info.version.data);
+  printf("accessorCount %d\n", info.accessorCount);
+  printf("animationCount %d\n", info.animationCount);
+  printf("bufferCount %d\n", info.bufferCount);
+  printf("bufferViewCount %d\n", info.bufferViewCount);
+  printf("cameraCount %d\n", info.cameraCount);
+  printf("imageCount %d\n", info.imageCount);
+  printf("materialCount %d\n", info.materialCount);
+  printf("meshCount %d\n", info.meshCount);
+  printf("nodeCount %d\n", info.nodeCount);
+  printf("samplerCount %d\n", info.samplerCount);
+  printf("sceneCount %d\n", info.sceneCount);
+  printf("skinCount %d\n", info.skinCount);
+  printf("textureCount %d\n", info.textureCount);
 
   return NULL;
 }
