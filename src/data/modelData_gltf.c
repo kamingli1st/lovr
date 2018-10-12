@@ -1,10 +1,15 @@
 #include "data/modelData.h"
+#include "math/mat4.h"
 #include "lib/jsmn/jsmn.h"
 #include <stdio.h>
 
 #define MAGIC_glTF 0x46546c67
 #define MAGIC_JSON 0x4e4f534a
 #define MAGIC_BIN 0x004e4942
+
+#define G_STR_EQ(s, t) !strncmp(s.data, t, s.length)
+#define G_INT(s) strtol(s, NULL, 10)
+#define G_FLOAT(s) strtof(s, NULL)
 
 typedef struct {
   char* data;
@@ -23,21 +28,28 @@ typedef struct {
 } gltfChunkHeader;
 
 typedef struct {
-  gltfString version;
-  int accessorCount;
-  int animationCount;
-  int bufferCount;
-  int bufferViewCount;
-  int cameraCount;
-  int imageCount;
-  int materialCount;
-  int meshCount;
-  int nodeCount;
-  int samplerCount;
-  int sceneCount;
-  int skinCount;
-  int textureCount;
+  int mesh;
+  float transform[16];
+  uint32_t childrenIndex; // Index into children array where children start
+  uint32_t childrenCount;
+} gltfNode;
+
+typedef struct {
+  int count;
+  jsmntok_t* token;
+} gltfProperty;
+
+typedef struct {
+  gltfProperty nodes;
+  gltfProperty children;
 } gltfInfo;
+
+typedef struct {
+  Ref ref;
+  uint8_t* data;
+  gltfNode* nodes;
+  uint32_t* children;
+} gltfModel;
 
 static int nomString(const char* data, jsmntok_t* token, gltfString* string) {
   lovrAssert(token->type == JSMN_STRING, "Expected string");
@@ -55,6 +67,39 @@ static int nomValue(const char* data, jsmntok_t* token, int count, int sum) {
     case JSMN_OBJECT: return nomValue(data, token + 1, count - 1 + 2 * token->size, sum + 1);
     case JSMN_ARRAY: return nomValue(data, token + 1, count - 1 + token->size, sum + 1);
     default: return nomValue(data, token + 1, count - 1, sum + 1);
+  }
+}
+
+static void preparse(const char* json, jsmntok_t* tokens, int tokenCount, gltfInfo* info, size_t* dataSize) {
+  for (jsmntok_t* token = tokens + 1; token < tokens + tokenCount;) {
+    gltfString key;
+    token += nomString(json, token, &key);
+
+    if (G_STR_EQ(key, "nodes")) {
+      info->nodes.token = token;
+      info->nodes.count = token->size;
+      *dataSize += info->nodes.count * sizeof(gltfNode);
+      token++;
+
+      for (int i = 0; i < info->nodes.count; i++) {
+        if (token->size > 0) {
+          int keys = token->size;
+          token++;
+          for (int j = 0; j < keys; j++) {
+            gltfString nodeKey;
+            token += nomString(json, token, &nodeKey);
+            if (G_STR_EQ(nodeKey, "children")) {
+              info->children.count += token->size;
+            }
+            token += nomValue(json, token, 1, 0);
+          }
+        }
+      }
+
+      continue;
+    }
+
+    token += nomValue(json, token, 1, 0);
   }
 }
 
@@ -92,72 +137,77 @@ ModelData* lovrModelDataInitFromGltf(ModelData* modelData, Blob* blob) {
   lovrAssert(tokenCount >= 0, "Invalid JSON");
   lovrAssert(tokens[0].type == JSMN_OBJECT, "No root object");
 
-  // Parse info
   gltfInfo info = { 0 };
-  for (jsmntok_t* token = tokens + 1; token < tokens + tokenCount;) {
-    gltfString key;
-    token += nomString(jsonData, token, &key);
+  size_t dataSize = 0;
+  preparse(jsonData, tokens, tokenCount, &info, &dataSize);
 
-    if (!strncmp(key.data, "asset", key.length)) {
+  size_t offset = 0;
+  gltfModel model = { 0 };
+  model.data = malloc(dataSize);
+  model.nodes = (gltfNode*) (model.data + offset), offset += info.nodes.count * sizeof(gltfNode);
+  model.children = (uint32_t*) (model.data + offset), offset += info.children.count * sizeof(uint32_t);
+
+  int childIndex = 0;
+  if (info.nodes.token) {
+    jsmntok_t* token = info.nodes.token;
+    token++;
+    for (int i = 0; i < info.nodes.count; i++) {
+      float translation[3], rotation[4], scale[3];
+      gltfNode* node = &model.nodes[i];
+      node->childrenIndex = -1;
+      bool matrix = false;
+
       int keys = token->size;
       token++;
+      for (int j = 0; j < keys; j++) {
+        gltfString nodeKey;
+        token += nomString(jsonData, token, &nodeKey);
 
-      for (int i = 0; i < keys; i++) {
-        gltfString assetKey;
-        token += nomString(jsonData, token, &assetKey);
-        if (!strncmp(assetKey.data, "version", assetKey.length)) {
-          token += nomString(jsonData, token, &info.version);
+        if (G_STR_EQ(nodeKey, "children")) {
+          node->childrenIndex = childIndex;
+          node->childrenCount = token->size;
+          token++;
+          for (uint32_t k = 0; k < node->childrenCount; k++) {
+            model.children[childIndex++] = G_INT(jsonData + token->start);
+            token++;
+          }
+        } else if (G_STR_EQ(nodeKey, "mesh")) {
+          node->mesh = G_INT(jsonData + token->start);
+          token++;
+        } else if (G_STR_EQ(nodeKey, "matrix")) {
+          matrix = true;
+          for (int k = 0; k < token->size; k++) {
+            node->transform[k] = G_FLOAT(jsonData + token->start);
+            token++;
+          }
+        } else if (G_STR_EQ(nodeKey, "rotation")) {
+          for (int k = 0; k < 4; k++) {
+            rotation[k] = G_FLOAT(jsonData + token->start);
+            token++;
+          }
+        } else if (G_STR_EQ(nodeKey, "scale")) {
+          for (int k = 0; k < 3; k++) {
+            scale[k] = G_FLOAT(jsonData + token->start);
+            token++;
+          }
+        } else if (G_STR_EQ(nodeKey, "translation")) {
+          for (int k = 0; k < 3; k++) {
+            translation[k] = G_FLOAT(jsonData + token->start);
+            token++;
+          }
         } else {
           token += nomValue(jsonData, token, 1, 0);
         }
       }
 
-      continue;
-    } else if (!strncmp(key.data, "scenes", key.length)) {
-      info.sceneCount = token->size;
-    } else if (!strncmp(key.data, "nodes", key.length)) {
-      info.nodeCount = token->size;
-    } else if (!strncmp(key.data, "meshes", key.length)) {
-      info.meshCount = token->size;
-    } else if (!strncmp(key.data, "accessors", key.length)) {
-      info.accessorCount = token->size;
-    } else if (!strncmp(key.data, "materials", key.length)) {
-      info.materialCount = token->size;
-    } else if (!strncmp(key.data, "bufferViews", key.length)) {
-      info.bufferViewCount = token->size;
-    } else if (!strncmp(key.data, "buffers", key.length)) {
-      info.bufferCount = token->size;
-    } else if (!strncmp(key.data, "animations", key.length)) {
-      info.animationCount = token->size;
-    } else if (!strncmp(key.data, "images", key.length)) {
-      info.imageCount = token->size;
-    } else if (!strncmp(key.data, "samplers", key.length)) {
-      info.samplerCount = token->size;
-    } else if (!strncmp(key.data, "skins", key.length)) {
-      info.skinCount = token->size;
-    } else if (!strncmp(key.data, "textures", key.length)) {
-      info.textureCount = token->size;
-    } else if (!strncmp(key.data, "cameras", key.length)) {
-      info.cameraCount = token->size;
+      if (!matrix) {
+        mat4_identity(node->transform);
+        mat4_translate(node->transform, translation[0], translation[1], translation[2]);
+        mat4_rotateQuat(node->transform, rotation);
+        mat4_scale(node->transform, scale[0], scale[1], scale[2]);
+      }
     }
-
-    token += nomValue(jsonData, token, 1, 0);
   }
-
-  printf("version %.*s\n", (int) info.version.length, info.version.data);
-  printf("accessorCount %d\n", info.accessorCount);
-  printf("animationCount %d\n", info.animationCount);
-  printf("bufferCount %d\n", info.bufferCount);
-  printf("bufferViewCount %d\n", info.bufferViewCount);
-  printf("cameraCount %d\n", info.cameraCount);
-  printf("imageCount %d\n", info.imageCount);
-  printf("materialCount %d\n", info.materialCount);
-  printf("meshCount %d\n", info.meshCount);
-  printf("nodeCount %d\n", info.nodeCount);
-  printf("samplerCount %d\n", info.samplerCount);
-  printf("sceneCount %d\n", info.sceneCount);
-  printf("skinCount %d\n", info.skinCount);
-  printf("textureCount %d\n", info.textureCount);
 
   return NULL;
 }
