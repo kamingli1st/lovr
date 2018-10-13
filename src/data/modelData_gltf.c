@@ -7,14 +7,9 @@
 #define MAGIC_JSON 0x4e4f534a
 #define MAGIC_BIN 0x004e4942
 
-#define G_STR_EQ(s, t) !strncmp(s.data, t, s.length)
-#define G_INT(s) strtol(s, NULL, 10)
-#define G_FLOAT(s) strtof(s, NULL)
-
-typedef struct {
-  char* data;
-  size_t length;
-} gltfString;
+#define KEY_EQ(k, s) !strncmp(k.data, s, k.length)
+#define TOK_INT(j, t) strtol(j + t->start, NULL, 10)
+#define TOK_FLOAT(j, t) strtof(j + t->start, NULL)
 
 typedef struct {
   uint32_t magic;
@@ -28,11 +23,9 @@ typedef struct {
 } gltfChunkHeader;
 
 typedef struct {
-  int mesh;
-  float transform[16];
-  uint32_t childrenIndex; // Index into children array where children start
-  uint32_t childrenCount;
-} gltfNode;
+  char* data;
+  size_t length;
+} gltfString;
 
 typedef struct {
   int count;
@@ -41,14 +34,37 @@ typedef struct {
 
 typedef struct {
   gltfProperty nodes;
-  gltfProperty children;
+  gltfProperty meshes;
+  gltfProperty primitives;
+  int childrenIndices;
+  int primitiveIndices;
 } gltfInfo;
+
+typedef struct {
+  float transform[16];
+  uint32_t* children;
+  uint32_t childCount;
+  int mesh;
+} gltfNode;
+
+typedef struct {
+  uint32_t* primitives;
+  uint32_t primitiveCount;
+} gltfMesh;
+
+typedef struct {
+  int material;
+  int drawMode;
+} gltfPrimitive;
 
 typedef struct {
   Ref ref;
   uint8_t* data;
   gltfNode* nodes;
-  uint32_t* children;
+  gltfMesh* meshes;
+  gltfPrimitive* primitives;
+  uint32_t* childrenMap;
+  uint32_t* primitiveMap;
 } gltfModel;
 
 static int nomString(const char* data, jsmntok_t* token, gltfString* string) {
@@ -59,10 +75,7 @@ static int nomString(const char* data, jsmntok_t* token, gltfString* string) {
 }
 
 static int nomValue(const char* data, jsmntok_t* token, int count, int sum) {
-  if (count == 0) {
-    return sum;
-  }
-
+  if (count == 0) { return sum; }
   switch (token->type) {
     case JSMN_OBJECT: return nomValue(data, token + 1, count - 1 + 2 * token->size, sum + 1);
     case JSMN_ARRAY: return nomValue(data, token + 1, count - 1 + token->size, sum + 1);
@@ -70,29 +83,45 @@ static int nomValue(const char* data, jsmntok_t* token, int count, int sum) {
   }
 }
 
+// Kinda like sum(map(arr, obj => #obj[key]))
+static jsmntok_t* aggregate(const char* json, jsmntok_t* token, const char* target, int* total) {
+  *total = 0;
+  int size = (token++)->size;
+  for (int i = 0; i < size; i++) {
+    if (token->size > 0) {
+      int keys = (token++)->size;
+      for (int k = 0; k < keys; k++) {
+        gltfString key;
+        token += nomString(json, token, &key);
+        if (KEY_EQ(key, target)) {
+          *total += token->size;
+        }
+        token += nomValue(json, token, 1, 0);
+      }
+    }
+  }
+  return token;
+}
+
 static void preparse(const char* json, jsmntok_t* tokens, int tokenCount, gltfInfo* info, size_t* dataSize) {
   for (jsmntok_t* token = tokens + 1; token < tokens + tokenCount;) { // +1 to skip root object
     gltfString key;
     token += nomString(json, token, &key);
 
-    if (G_STR_EQ(key, "nodes")) {
+    if (KEY_EQ(key, "nodes")) {
       info->nodes.token = token;
-      info->nodes.count = (token++)->size; // Enter array
+      info->nodes.count = token->size;
       *dataSize += info->nodes.count * sizeof(gltfNode);
-
-      for (int i = 0; i < info->nodes.count; i++) {
-        if (token->size > 0) {
-          int keys = (token++)->size; // Enter object
-          for (int k = 0; k < keys; k++) {
-            gltfString nodeKey;
-            token += nomString(json, token, &nodeKey);
-            if (G_STR_EQ(nodeKey, "children")) {
-              info->children.count += token->size;
-            }
-            token += nomValue(json, token, 1, 0);
-          }
-        }
-      }
+      token = aggregate(json, token, "children", &info->childrenIndices);
+    } else if (KEY_EQ(key, "meshes")) {
+      info->meshes.token = token;
+      info->meshes.count = token->size;
+      *dataSize += info->meshes.count * sizeof(gltfMesh);
+      token = aggregate(json, token, "primitives", &info->primitiveIndices);
+    } else if (KEY_EQ(key, "primitives")) {
+      info->primitives.token = token;
+      info->primitives.count = token->size;
+      *dataSize += info->primitives.count * sizeof(gltfPrimitive);
     } else {
       token += nomValue(json, token, 1, 0); // Skip
     }
@@ -109,7 +138,6 @@ static void parseNodes(const char* json, jsmntok_t* tokens, gltfInfo* info, gltf
   jsmntok_t* token = info->nodes.token++; // Enter array
   for (int i = 0; i < nodeCount; i++) {
     gltfNode* node = &model->nodes[i];
-    node->childrenIndex = -1;
     float translation[3] = { 0, 0, 0 };
     float rotation[4] = { 0, 0, 0, 0 };
     float scale[3] = { 1, 1, 1 };
@@ -123,35 +151,36 @@ static void parseNodes(const char* json, jsmntok_t* tokens, gltfInfo* info, gltf
       token += nomString(json, token, &key);
 
       // Process value
-      if (G_STR_EQ(key, "children")) {
-        node->childrenIndex = childIndex;
-        node->childrenCount = token->size, token++;
-        for (uint32_t j = 0; j < node->childrenCount; j++) {
-          model->children[childIndex++] = G_INT(json + token->start), token++;
+      if (KEY_EQ(key, "children")) {
+        node->children = &model->childrenMap[childIndex];
+        node->childCount = (token++)->size;
+        for (uint32_t j = 0; j < node->childCount; j++) {
+          model->childrenMap[childIndex++] = TOK_INT(json, token), token++;
         }
-      } else if (G_STR_EQ(key, "mesh")) {
-        node->mesh = G_INT(json + token->start), token++;
-      } else if (G_STR_EQ(key, "matrix")) {
+      } else if (KEY_EQ(key, "mesh")) {
+        node->mesh = TOK_INT(json, token), token++;
+      } else if (KEY_EQ(key, "matrix")) {
         lovrAssert(token->size == 16, "Node matrix needs 16 elements");
         matrix = true;
         for (int j = 0; j < token->size; j++) {
-          node->transform[j] = G_FLOAT(json + token->start), token++;
+          node->transform[j] = TOK_FLOAT(json, token), token++;
         }
-      } else if (G_STR_EQ(key, "translation")) {
+      } else if (KEY_EQ(key, "translation")) {
         lovrAssert(token->size == 3, "Node translation needs 3 elements");
-        for (int j = 0; j < 3; j++) {
-          translation[j] = G_FLOAT(json + token->start), token++;
-        }
-      } else if (G_STR_EQ(key, "rotation")) {
+        translation[0] = TOK_FLOAT(json, token), token++;
+        translation[1] = TOK_FLOAT(json, token), token++;
+        translation[2] = TOK_FLOAT(json, token), token++;
+      } else if (KEY_EQ(key, "rotation")) {
         lovrAssert(token->size == 4, "Node rotation needs 4 elements");
-        for (int j = 0; j < 4; j++) {
-          rotation[j] = G_FLOAT(json + token->start), token++;
-        }
-      } else if (G_STR_EQ(key, "scale")) {
+        rotation[0] = TOK_FLOAT(json, token), token++;
+        rotation[1] = TOK_FLOAT(json, token), token++;
+        rotation[2] = TOK_FLOAT(json, token), token++;
+        rotation[3] = TOK_FLOAT(json, token), token++;
+      } else if (KEY_EQ(key, "scale")) {
         lovrAssert(token->size == 3, "Node scale needs 3 elements");
-        for (int j = 0; j < 3; j++) {
-          scale[j] = G_FLOAT(json + token->start), token++;
-        }
+        scale[0] = TOK_FLOAT(json, token), token++;
+        scale[1] = TOK_FLOAT(json, token), token++;
+        scale[2] = TOK_FLOAT(json, token), token++;
       } else {
         token += nomValue(json, token, 1, 0); // Skip
       }
@@ -207,9 +236,10 @@ ModelData* lovrModelDataInitFromGltf(ModelData* modelData, Blob* blob) {
 
   size_t offset = 0;
   gltfModel model = { 0 };
-  model.data = malloc(dataSize);
+  model.data = calloc(1, dataSize);
   model.nodes = (gltfNode*) (model.data + offset), offset += info.nodes.count * sizeof(gltfNode);
-  model.children = (uint32_t*) (model.data + offset), offset += info.children.count * sizeof(uint32_t);
+  model.childrenMap = (uint32_t*) (model.data + offset), offset += info.childrenIndices * sizeof(uint32_t);
+  model.primitiveMap = (uint32_t*) (model.data + offset), offset += info.primitiveIndices * sizeof(uint32_t);
 
   parseNodes(jsonData, tokens, &info, &model);
 
