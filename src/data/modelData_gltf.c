@@ -35,9 +35,8 @@ typedef struct {
 typedef struct {
   gltfProperty nodes;
   gltfProperty meshes;
-  gltfProperty primitives;
-  int childrenIndices;
-  int primitiveIndices;
+  int childCount;
+  int primitiveCount;
 } gltfInfo;
 
 typedef struct {
@@ -48,14 +47,14 @@ typedef struct {
 } gltfNode;
 
 typedef struct {
-  uint32_t* primitives;
-  uint32_t primitiveCount;
-} gltfMesh;
-
-typedef struct {
   int material;
   int drawMode;
 } gltfPrimitive;
+
+typedef struct {
+  gltfPrimitive* primitives;
+  uint32_t primitiveCount;
+} gltfMesh;
 
 typedef struct {
   Ref ref;
@@ -63,8 +62,7 @@ typedef struct {
   gltfNode* nodes;
   gltfMesh* meshes;
   gltfPrimitive* primitives;
-  uint32_t* childrenMap;
-  uint32_t* primitiveMap;
+  uint32_t* childMap;
 } gltfModel;
 
 static int nomString(const char* data, jsmntok_t* token, gltfString* string) {
@@ -112,32 +110,26 @@ static void preparse(const char* json, jsmntok_t* tokens, int tokenCount, gltfIn
       info->nodes.token = token;
       info->nodes.count = token->size;
       *dataSize += info->nodes.count * sizeof(gltfNode);
-      token = aggregate(json, token, "children", &info->childrenIndices);
+      token = aggregate(json, token, "children", &info->childCount);
     } else if (KEY_EQ(key, "meshes")) {
       info->meshes.token = token;
       info->meshes.count = token->size;
       *dataSize += info->meshes.count * sizeof(gltfMesh);
-      token = aggregate(json, token, "primitives", &info->primitiveIndices);
-    } else if (KEY_EQ(key, "primitives")) {
-      info->primitives.token = token;
-      info->primitives.count = token->size;
-      *dataSize += info->primitives.count * sizeof(gltfPrimitive);
+      token = aggregate(json, token, "primitives", &info->primitiveCount);
+      *dataSize += info->primitiveCount * sizeof(gltfPrimitive);
     } else {
       token += nomValue(json, token, 1, 0); // Skip
     }
   }
 }
 
-static void parseNodes(const char* json, jsmntok_t* tokens, gltfInfo* info, gltfModel* model) {
-  if (!info->nodes.token) {
-    return;
-  }
+static void parseNodes(const char* json, jsmntok_t* token, gltfModel* gltf) {
+  if (!token) return;
 
   int childIndex = 0;
-  int nodeCount = info->nodes.count;
-  jsmntok_t* token = info->nodes.token++; // Enter array
-  for (int i = 0; i < nodeCount; i++) {
-    gltfNode* node = &model->nodes[i];
+  int count = (token++)->size; // Enter array
+  for (int i = 0; i < count; i++) {
+    gltfNode* node = &gltf->nodes[i];
     float translation[3] = { 0, 0, 0 };
     float rotation[4] = { 0, 0, 0, 0 };
     float scale[3] = { 1, 1, 1 };
@@ -146,16 +138,13 @@ static void parseNodes(const char* json, jsmntok_t* tokens, gltfInfo* info, gltf
     gltfString key;
     int keyCount = (token++)->size; // Enter object
     for (int k = 0; k < keyCount; k++) {
-
-      // Read key
       token += nomString(json, token, &key);
 
-      // Process value
       if (KEY_EQ(key, "children")) {
-        node->children = &model->childrenMap[childIndex];
+        node->children = &gltf->childMap[childIndex];
         node->childCount = (token++)->size;
         for (uint32_t j = 0; j < node->childCount; j++) {
-          model->childrenMap[childIndex++] = TOK_INT(json, token), token++;
+          gltf->childMap[childIndex++] = TOK_INT(json, token), token++;
         }
       } else if (KEY_EQ(key, "mesh")) {
         node->mesh = TOK_INT(json, token), token++;
@@ -192,6 +181,49 @@ static void parseNodes(const char* json, jsmntok_t* tokens, gltfInfo* info, gltf
       mat4_translate(node->transform, translation[0], translation[1], translation[2]);
       mat4_rotateQuat(node->transform, rotation);
       mat4_scale(node->transform, scale[0], scale[1], scale[2]);
+    }
+  }
+}
+
+static jsmntok_t* parsePrimitive(const char* json, jsmntok_t* token, int index, gltfModel* gltf) {
+  gltfString key;
+  gltfPrimitive* primitive = &gltf->primitives[index];
+  int keyCount = (token++)->size; // Enter object
+  for (int k = 0; k < keyCount; k++) {
+    token += nomString(json, token, &key);
+
+    if (KEY_EQ(key, "material")) {
+      primitive->material = TOK_INT(json, token), token++;
+    } else if (KEY_EQ(key, "mode")) {
+      primitive->drawMode = TOK_INT(json, token), token++;
+    } else {
+      token += nomValue(json, token, 1, 0); // Skip
+    }
+  }
+  return token;
+}
+
+static void parseMeshes(const char* json, jsmntok_t* token, gltfModel* gltf) {
+  if (!token) return;
+
+  int primitiveIndex = 0;
+  int count = (token++)->size; // Enter array
+  for (int i = 0; i < count; i++) {
+    gltfString key;
+    gltfMesh* mesh = &gltf->meshes[i];
+    int keyCount = (token++)->size; // Enter object
+    for (int k = 0; k < keyCount; k++) {
+      token += nomString(json, token, &key);
+
+      if (KEY_EQ(key, "primitives")) {
+        mesh->primitives = &gltf->primitives[primitiveIndex];
+        mesh->primitiveCount = (token++)->size;
+        for (uint32_t j = 0; j < mesh->primitiveCount; j++) {
+          token = parsePrimitive(json, token, primitiveIndex++, gltf);
+        }
+      } else {
+        token += nomValue(json, token, 1, 0); // Skip
+      }
     }
   }
 }
@@ -238,10 +270,12 @@ ModelData* lovrModelDataInitFromGltf(ModelData* modelData, Blob* blob) {
   gltfModel model = { 0 };
   model.data = calloc(1, dataSize);
   model.nodes = (gltfNode*) (model.data + offset), offset += info.nodes.count * sizeof(gltfNode);
-  model.childrenMap = (uint32_t*) (model.data + offset), offset += info.childrenIndices * sizeof(uint32_t);
-  model.primitiveMap = (uint32_t*) (model.data + offset), offset += info.primitiveIndices * sizeof(uint32_t);
+  model.meshes = (gltfMesh*) (model.data + offset), offset += info.meshes.count * sizeof(gltfMesh);
+  model.primitives = (gltfPrimitive*) (model.data + offset), offset += info.primitiveCount * sizeof(gltfPrimitive);
+  model.childMap = (uint32_t*) (model.data + offset), offset += info.childCount * sizeof(uint32_t);
 
-  parseNodes(jsonData, tokens, &info, &model);
+  parseNodes(jsonData, info.nodes.token, &model);
+  parseMeshes(jsonData, info.meshes.token, &model);
 
   return NULL;
 }
