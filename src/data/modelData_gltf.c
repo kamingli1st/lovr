@@ -33,6 +33,7 @@ typedef struct {
 } gltfProperty;
 
 typedef struct {
+  gltfProperty buffers;
   gltfProperty nodes;
   gltfProperty meshes;
   int childCount;
@@ -59,6 +60,7 @@ typedef struct {
 typedef struct {
   Ref ref;
   uint8_t* data;
+  Blob* buffers;
   gltfNode* nodes;
   gltfMesh* meshes;
   gltfPrimitive* primitives;
@@ -106,7 +108,11 @@ static void preparse(const char* json, jsmntok_t* tokens, int tokenCount, gltfIn
     gltfString key;
     token += nomString(json, token, &key);
 
-    if (KEY_EQ(key, "nodes")) {
+    if (KEY_EQ(key, "buffers")) {
+      info->buffers.token = token;
+      info->buffers.count = token->size;
+      *dataSize += info->buffers.count * sizeof(Blob);
+    } elseif (KEY_EQ(key, "nodes")) {
       info->nodes.token = token;
       info->nodes.count = token->size;
       *dataSize += info->nodes.count * sizeof(gltfNode);
@@ -119,6 +125,30 @@ static void preparse(const char* json, jsmntok_t* tokens, int tokenCount, gltfIn
       *dataSize += info->primitiveCount * sizeof(gltfPrimitive);
     } else {
       token += nomValue(json, token, 1, 0); // Skip
+    }
+  }
+}
+
+static void parseBuffers(const char* json, jsmntok_t* token, gltfModel* gltf) {
+  if (!token) return;
+
+  int count = (token++)->size;
+  for (int i = 0; i < count; i++) {
+    Blob* blob = &gltf->buffers[i];
+    gltfString key;
+    int keyCount = (token++)->size;
+    for (int k = 0; k < keyCount; k++) {
+      token += nomString(json, token, &key);
+
+      if (KEY_EQ(key, "byteLength")) {
+        blob->size = TOK_INT(json, token), token++;
+      } else if (KEY_EQ(key, "uri")) {
+        //
+      } else if (KEY_EQ, key, "name")) {
+        //
+      } else {
+        token += nomValue(json, token, 1, 0); // Skip
+      }
     }
   }
 }
@@ -269,11 +299,13 @@ ModelData* lovrModelDataInitFromGltf(ModelData* modelData, Blob* blob) {
   size_t offset = 0;
   gltfModel model = { 0 };
   model.data = calloc(1, dataSize);
+  model.buffers = (Blob*) (model.data + offset), offset += info.buffers.count * sizeof(Blob);
   model.nodes = (gltfNode*) (model.data + offset), offset += info.nodes.count * sizeof(gltfNode);
   model.meshes = (gltfMesh*) (model.data + offset), offset += info.meshes.count * sizeof(gltfMesh);
   model.primitives = (gltfPrimitive*) (model.data + offset), offset += info.primitiveCount * sizeof(gltfPrimitive);
   model.childMap = (uint32_t*) (model.data + offset), offset += info.childCount * sizeof(uint32_t);
 
+  parseBuffers(jsonData, info.buffers.token, &model);
   parseNodes(jsonData, info.nodes.token, &model);
   parseMeshes(jsonData, info.meshes.token, &model);
 
