@@ -3,6 +3,16 @@
 #include "lib/jsmn/jsmn.h"
 #include <stdio.h>
 
+// Notes:
+//   - We parse in two passes.
+//     - In the first pass we figure out how much memory we need to allocate.
+//     - Then we allocate the memory and do a second pass to fill everything in.
+//   - Plan is to make this parser destructive, so it mutates the input Blob in order to avoid doing
+//     work in some situations, for speed.  May make sense to provide a non-destructive option.
+//     - Currently this is most useful for reusing string memory by changing quotes to \0's.
+//   - Caveats:
+//     - The IO callback must not hang onto the filenames that are passed into it.
+
 #define MAGIC_glTF 0x46546c67
 #define MAGIC_JSON 0x4e4f534a
 #define MAGIC_BIN 0x004e4942
@@ -60,7 +70,7 @@ typedef struct {
 typedef struct {
   Ref ref;
   uint8_t* data;
-  Blob* buffers;
+  Blob* buffers; // Don't lovrRetain these, maybe it should just be array of void pointers
   gltfNode* nodes;
   gltfMesh* meshes;
   gltfPrimitive* primitives;
@@ -112,7 +122,8 @@ static void preparse(const char* json, jsmntok_t* tokens, int tokenCount, gltfIn
       info->buffers.token = token;
       info->buffers.count = token->size;
       *dataSize += info->buffers.count * sizeof(Blob);
-    } elseif (KEY_EQ(key, "nodes")) {
+      token += nomValue(json, token, 1, 0);
+    } else if (KEY_EQ(key, "nodes")) {
       info->nodes.token = token;
       info->nodes.count = token->size;
       *dataSize += info->nodes.count * sizeof(gltfNode);
@@ -129,7 +140,7 @@ static void preparse(const char* json, jsmntok_t* tokens, int tokenCount, gltfIn
   }
 }
 
-static void parseBuffers(const char* json, jsmntok_t* token, gltfModel* gltf) {
+static void parseBuffers(const char* json, jsmntok_t* token, gltfModel* gltf, ModelDataIO io, void* binData) {
   if (!token) return;
 
   int count = (token++)->size;
@@ -137,18 +148,30 @@ static void parseBuffers(const char* json, jsmntok_t* token, gltfModel* gltf) {
     Blob* blob = &gltf->buffers[i];
     gltfString key;
     int keyCount = (token++)->size;
+    size_t bytesRead = 0;
+    bool hasUri = false;
+
     for (int k = 0; k < keyCount; k++) {
       token += nomString(json, token, &key);
-
       if (KEY_EQ(key, "byteLength")) {
         blob->size = TOK_INT(json, token), token++;
       } else if (KEY_EQ(key, "uri")) {
-        //
-      } else if (KEY_EQ, key, "name")) {
-        //
+        hasUri = true;
+        gltfString filename;
+        token += nomString(json, token, &filename);
+        filename.data[filename.length] = '\0'; // Change the quote into a terminator (I'll be b0k)
+        blob->data = io.read(filename.data, &bytesRead);
+        lovrAssert(blob->data, "Unable to read %s", filename.data);
       } else {
         token += nomValue(json, token, 1, 0); // Skip
       }
+    }
+
+    if (hasUri) {
+      lovrAssert(bytesRead == blob->size, "Couldn't read all of buffer data");
+    } else {
+      lovrAssert(binData && i == 0, "Buffer is missing URI");
+      blob->data = binData;
     }
   }
 }
@@ -258,7 +281,7 @@ static void parseMeshes(const char* json, jsmntok_t* token, gltfModel* gltf) {
   }
 }
 
-ModelData* lovrModelDataInitFromGltf(ModelData* modelData, Blob* blob) {
+ModelData* lovrModelDataInitFromGltf(ModelData* modelData, Blob* blob, ModelDataIO io) {
   uint8_t* data = blob->data;
   gltfHeader* header = (gltfHeader*) data;
   bool glb = header->magic == MAGIC_glTF;
@@ -287,8 +310,8 @@ ModelData* lovrModelDataInitFromGltf(ModelData* modelData, Blob* blob) {
   jsmn_parser parser;
   jsmn_init(&parser);
 
-  jsmntok_t tokens[256];
-  int tokenCount = jsmn_parse(&parser, jsonData, jsonLength, tokens, 256);
+  jsmntok_t tokens[1024]; // TODO malloc or token queue
+  int tokenCount = jsmn_parse(&parser, jsonData, jsonLength, tokens, 1024);
   lovrAssert(tokenCount >= 0, "Invalid JSON");
   lovrAssert(tokens[0].type == JSMN_OBJECT, "No root object");
 
@@ -305,7 +328,7 @@ ModelData* lovrModelDataInitFromGltf(ModelData* modelData, Blob* blob) {
   model.primitives = (gltfPrimitive*) (model.data + offset), offset += info.primitiveCount * sizeof(gltfPrimitive);
   model.childMap = (uint32_t*) (model.data + offset), offset += info.childCount * sizeof(uint32_t);
 
-  parseBuffers(jsonData, info.buffers.token, &model);
+  parseBuffers(jsonData, info.buffers.token, &model, io, (void*) binData);
   parseNodes(jsonData, info.nodes.token, &model);
   parseMeshes(jsonData, info.meshes.token, &model);
 

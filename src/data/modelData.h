@@ -89,9 +89,13 @@ typedef struct {
   int materialCount;
 } ModelData;
 
+typedef struct {
+  void* (*read)(const char* path, size_t* bytesRead);
+} ModelDataIO;
+
 ModelData* lovrModelDataInit(ModelData* modelData, Blob* blob);
 ModelData* lovrModelDataInitEmpty(ModelData* modelData);
-ModelData* lovrModelDataInitFromGltf(ModelData* modelData, Blob* blob);
+ModelData* lovrModelDataInitFromGltf(ModelData* modelData, Blob* blob, ModelDataIO io);
 #define lovrModelDataCreate(...) lovrModelDataInit(lovrAlloc(ModelData), __VA_ARGS__)
 #define lovrModelDataCreateEmpty(...) lovrModelDataInitEmpty(lovrAlloc(ModelData), __VA_ARGS__)
 #define lovrModelDataCreateFromGltf(...) lovrModelDataInitFromGltf(lovrAlloc(ModelData), __VA_ARGS__)
