@@ -44,6 +44,7 @@ typedef struct {
 
 typedef struct {
   gltfProperty buffers;
+  gltfProperty bufferViews;
   gltfProperty nodes;
   gltfProperty meshes;
   int childCount;
@@ -54,6 +55,13 @@ typedef struct {
   void* data;
   size_t size;
 } gltfBuffer;
+
+typedef struct {
+  int buffer;
+  int offset;
+  int length;
+  int stride;
+} gltfBufferView;
 
 typedef struct {
   float transform[16];
@@ -76,6 +84,7 @@ typedef struct {
   Ref ref;
   uint8_t* data;
   gltfBuffer* buffers;
+  gltfBufferView* bufferViews;
   gltfNode* nodes;
   gltfMesh* meshes;
   gltfPrimitive* primitives;
@@ -128,6 +137,11 @@ static void preparse(const char* json, jsmntok_t* tokens, int tokenCount, gltfIn
       info->buffers.count = token->size;
       *dataSize += info->buffers.count * sizeof(gltfBuffer);
       token += nomValue(json, token, 1, 0);
+    } else if (KEY_EQ(key, "bufferViews")) {
+      info->bufferViews.token = token;
+      info->bufferViews.count = token->size;
+      *dataSize += info->bufferViews.count * sizeof(gltfBufferView);
+      token += nomValue(json, token, 1, 0);
     } else if (KEY_EQ(key, "nodes")) {
       info->nodes.token = token;
       info->nodes.count = token->size;
@@ -177,6 +191,32 @@ static void parseBuffers(const char* json, jsmntok_t* token, gltfModel* gltf, Mo
     } else {
       lovrAssert(binData && i == 0, "Buffer is missing URI");
       buffer->data = binData;
+    }
+  }
+}
+
+static void parseBufferViews(const char* json, jsmntok_t* token, gltfModel* gltf) {
+  if (!token) return;
+
+  int count = (token++)->size;
+  for (int i = 0; i < count; i++) {
+    gltfBufferView* bufferView = &gltf->bufferViews[i];
+    gltfString key;
+    int keyCount = (token++)->size;
+
+    for (int k = 0; k < keyCount; k++) {
+      token += nomString(json, token, &key);
+      if (KEY_EQ(key, "buffer")) {
+        bufferView->buffer = TOK_INT(json, token), token++;
+      } else if (KEY_EQ(key, "byteOffset")) {
+        bufferView->offset = TOK_INT(json, token), token++;
+      } else if (KEY_EQ(key, "byteLength")) {
+        bufferView->length = TOK_INT(json, token), token++;
+      } else if (KEY_EQ(key, "byteStride")) {
+        bufferView->stride = TOK_INT(json, token), token++;
+      } else {
+        token += nomValue(json, token, 1, 0); // Skip
+      }
     }
   }
 }
@@ -328,12 +368,14 @@ ModelData* lovrModelDataInitFromGltf(ModelData* modelData, Blob* blob, ModelData
   gltfModel model = { 0 };
   model.data = calloc(1, dataSize);
   model.buffers = (gltfBuffer*) (model.data + offset), offset += info.buffers.count * sizeof(gltfBuffer);
+  model.bufferViews = (gltfBufferView*) (model.data + offset), offset += info.bufferViews.count * sizeof(gltfBufferView);
   model.nodes = (gltfNode*) (model.data + offset), offset += info.nodes.count * sizeof(gltfNode);
   model.meshes = (gltfMesh*) (model.data + offset), offset += info.meshes.count * sizeof(gltfMesh);
   model.primitives = (gltfPrimitive*) (model.data + offset), offset += info.primitiveCount * sizeof(gltfPrimitive);
   model.childMap = (uint32_t*) (model.data + offset), offset += info.childCount * sizeof(uint32_t);
 
   parseBuffers(jsonData, info.buffers.token, &model, io, (void*) binData);
+  parseBufferViews(jsonData, info.bufferViews.token, &model);
   parseNodes(jsonData, info.nodes.token, &model);
   parseMeshes(jsonData, info.meshes.token, &model);
 
