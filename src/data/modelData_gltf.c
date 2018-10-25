@@ -51,6 +51,11 @@ typedef struct {
 } gltfInfo;
 
 typedef struct {
+  void* data;
+  size_t size;
+} gltfBuffer;
+
+typedef struct {
   float transform[16];
   uint32_t* children;
   uint32_t childCount;
@@ -70,7 +75,7 @@ typedef struct {
 typedef struct {
   Ref ref;
   uint8_t* data;
-  Blob* buffers; // Don't lovrRetain these, maybe it should just be array of void pointers
+  gltfBuffer* buffers;
   gltfNode* nodes;
   gltfMesh* meshes;
   gltfPrimitive* primitives;
@@ -121,7 +126,7 @@ static void preparse(const char* json, jsmntok_t* tokens, int tokenCount, gltfIn
     if (KEY_EQ(key, "buffers")) {
       info->buffers.token = token;
       info->buffers.count = token->size;
-      *dataSize += info->buffers.count * sizeof(Blob);
+      *dataSize += info->buffers.count * sizeof(gltfBuffer);
       token += nomValue(json, token, 1, 0);
     } else if (KEY_EQ(key, "nodes")) {
       info->nodes.token = token;
@@ -145,7 +150,7 @@ static void parseBuffers(const char* json, jsmntok_t* token, gltfModel* gltf, Mo
 
   int count = (token++)->size;
   for (int i = 0; i < count; i++) {
-    Blob* blob = &gltf->buffers[i];
+    gltfBuffer* buffer = &gltf->buffers[i];
     gltfString key;
     int keyCount = (token++)->size;
     size_t bytesRead = 0;
@@ -154,24 +159,24 @@ static void parseBuffers(const char* json, jsmntok_t* token, gltfModel* gltf, Mo
     for (int k = 0; k < keyCount; k++) {
       token += nomString(json, token, &key);
       if (KEY_EQ(key, "byteLength")) {
-        blob->size = TOK_INT(json, token), token++;
+        buffer->size = TOK_INT(json, token), token++;
       } else if (KEY_EQ(key, "uri")) {
         hasUri = true;
         gltfString filename;
         token += nomString(json, token, &filename);
         filename.data[filename.length] = '\0'; // Change the quote into a terminator (I'll be b0k)
-        blob->data = io.read(filename.data, &bytesRead);
-        lovrAssert(blob->data, "Unable to read %s", filename.data);
+        buffer->data = io.read(filename.data, &bytesRead);
+        lovrAssert(buffer->data, "Unable to read %s", filename.data);
       } else {
         token += nomValue(json, token, 1, 0); // Skip
       }
     }
 
     if (hasUri) {
-      lovrAssert(bytesRead == blob->size, "Couldn't read all of buffer data");
+      lovrAssert(bytesRead == buffer->size, "Couldn't read all of buffer data");
     } else {
       lovrAssert(binData && i == 0, "Buffer is missing URI");
-      blob->data = binData;
+      buffer->data = binData;
     }
   }
 }
@@ -322,7 +327,7 @@ ModelData* lovrModelDataInitFromGltf(ModelData* modelData, Blob* blob, ModelData
   size_t offset = 0;
   gltfModel model = { 0 };
   model.data = calloc(1, dataSize);
-  model.buffers = (Blob*) (model.data + offset), offset += info.buffers.count * sizeof(Blob);
+  model.buffers = (gltfBuffer*) (model.data + offset), offset += info.buffers.count * sizeof(gltfBuffer);
   model.nodes = (gltfNode*) (model.data + offset), offset += info.nodes.count * sizeof(gltfNode);
   model.meshes = (gltfMesh*) (model.data + offset), offset += info.meshes.count * sizeof(gltfMesh);
   model.primitives = (gltfPrimitive*) (model.data + offset), offset += info.primitiveCount * sizeof(gltfPrimitive);
