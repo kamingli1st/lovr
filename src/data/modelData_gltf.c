@@ -1,5 +1,5 @@
 #include "data/modelData.h"
-#include "math/mat4.h"
+#include "lib/math.h"
 #include "lib/jsmn/jsmn.h"
 #include <stdio.h>
 
@@ -365,7 +365,7 @@ ModelData* lovrModelDataInitFromGltf(ModelData* modelData, Blob* blob, ModelData
   preparse(jsonData, tokens, tokenCount, &info, &dataSize);
 
   size_t offset = 0;
-  gltfModel model = { 0 };
+  gltfModel model;
   model.data = calloc(1, dataSize);
   model.buffers = (gltfBuffer*) (model.data + offset), offset += info.buffers.count * sizeof(gltfBuffer);
   model.bufferViews = (gltfBufferView*) (model.data + offset), offset += info.bufferViews.count * sizeof(gltfBufferView);
