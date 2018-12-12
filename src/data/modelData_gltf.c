@@ -38,15 +38,10 @@ typedef struct {
 } gltfString;
 
 typedef struct {
-  int count;
-  jsmntok_t* token;
-} gltfProperty;
-
-typedef struct {
-  gltfProperty buffers;
-  gltfProperty bufferViews;
-  gltfProperty nodes;
-  gltfProperty meshes;
+  struct { int count; jsmntok_t* token; } buffers;
+  struct { int count; jsmntok_t* token; } bufferViews;
+  struct { int count; jsmntok_t* token; } nodes;
+  struct { int count; jsmntok_t* token; } meshes;
   int childCount;
   int primitiveCount;
 } gltfInfo;
