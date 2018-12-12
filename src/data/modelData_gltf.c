@@ -19,7 +19,10 @@
 
 #define KEY_EQ(k, s) !strncmp(k.data, s, k.length)
 #define TOK_INT(j, t) strtol(j + t->start, NULL, 10)
+#define TOK_BOOL(j, t) (*(j + t->start) == 't')
 #define TOK_FLOAT(j, t) strtof(j + t->start, NULL)
+
+typedef enum { I8, U8, I16, U16, I32, U32, F32 } NumberType;
 
 typedef struct {
   uint32_t magic;
@@ -38,6 +41,7 @@ typedef struct {
 } gltfString;
 
 typedef struct {
+  struct { int count; jsmntok_t* token; } accessors;
   struct { int count; jsmntok_t* token; } buffers;
   struct { int count; jsmntok_t* token; } bufferViews;
   struct { int count; jsmntok_t* token; } nodes;
@@ -45,6 +49,15 @@ typedef struct {
   int childCount;
   int primitiveCount;
 } gltfInfo;
+
+typedef struct {
+  int bufferView;
+  int count;
+  int offset;
+  NumberType type;
+  int components : 2;
+  int normalized : 1;
+} gltfAccessor;
 
 typedef struct {
   void* data;
@@ -78,6 +91,7 @@ typedef struct {
 typedef struct {
   Ref ref;
   uint8_t* data;
+  gltfAccessor* accessors;
   gltfBuffer* buffers;
   gltfBufferView* bufferViews;
   gltfNode* nodes;
@@ -127,7 +141,12 @@ static void preparse(const char* json, jsmntok_t* tokens, int tokenCount, gltfIn
     gltfString key;
     token += nomString(json, token, &key);
 
-    if (KEY_EQ(key, "buffers")) {
+    if (KEY_EQ(key, "accessors")) {
+      info->accessors.token = token;
+      info->accessors.count = token->size;
+      *dataSize += info->accessors.count * sizeof(gltfAccessor);
+      token += nomValue(json, token, 1, 0);
+    } else if (KEY_EQ(key, "buffers")) {
       info->buffers.token = token;
       info->buffers.count = token->size;
       *dataSize += info->buffers.count * sizeof(gltfBuffer);
@@ -150,6 +169,53 @@ static void preparse(const char* json, jsmntok_t* tokens, int tokenCount, gltfIn
       *dataSize += info->primitiveCount * sizeof(gltfPrimitive);
     } else {
       token += nomValue(json, token, 1, 0); // Skip
+    }
+  }
+}
+
+static void parseAccessors(const char* json, jsmntok_t* token, gltfModel* gltf) {
+  if (!token) return;
+
+  int count = (token++)->size;
+  for (int i = 0; i < count; i++) {
+    gltfAccessor* accessor = &gltf->accessors[i];
+    gltfString key;
+    int keyCount = (token++)->size;
+
+    for (int k = 0; k < keyCount; k++) {
+      token += nomString(json, token, &key);
+      if (KEY_EQ(key, "bufferView")) {
+        accessor->bufferView = TOK_INT(json, token), token++;
+      } else if (KEY_EQ(key, "count")) {
+        accessor->count = TOK_INT(json, token), token++;
+      } else if (KEY_EQ(key, "byteOffset")) {
+        accessor->offset = TOK_INT(json, token), token++;
+      } else if (KEY_EQ(key, "componentType")) {
+        switch (TOK_INT(json, token)) {
+          case 5120: accessor->type = I8; break;
+          case 5121: accessor->type = U8; break;
+          case 5122: accessor->type = I16; break;
+          case 5123: accessor->type = U16; break;
+          case 5125: accessor->type = U32; break;
+          case 5126: accessor->type = F32; break;
+          default: break;
+        }
+        token++;
+      } else if (KEY_EQ(key, "type")) {
+        gltfString type;
+        token += nomString(json, token, &type);
+        if (KEY_EQ(type, "SCALAR")) {
+          accessor->components = 1;
+        } else if (type.length == 4 && type.data[0] == 'V') {
+          accessor->components = type.data[3] - '0';
+        } else if (type.length == 4 && type.data[0] == 'M') {
+          lovrThrow("Matrix accessors are not supported");
+        }
+      } else if (KEY_EQ(key, "normalized")) {
+        accessor->normalized = TOK_BOOL(json, token), token++;
+      } else {
+        token += nomValue(json, token, 1, 0); // Skip
+      }
     }
   }
 }
@@ -362,6 +428,7 @@ ModelData* lovrModelDataInitFromGltf(ModelData* modelData, Blob* blob, ModelData
   size_t offset = 0;
   gltfModel model;
   model.data = calloc(1, dataSize);
+  model.accessors = (gltfAccessor*) (model.data + offset), offset += info.accessors.count * sizeof(gltfAccessor);
   model.buffers = (gltfBuffer*) (model.data + offset), offset += info.buffers.count * sizeof(gltfBuffer);
   model.bufferViews = (gltfBufferView*) (model.data + offset), offset += info.bufferViews.count * sizeof(gltfBufferView);
   model.nodes = (gltfNode*) (model.data + offset), offset += info.nodes.count * sizeof(gltfNode);
@@ -369,6 +436,7 @@ ModelData* lovrModelDataInitFromGltf(ModelData* modelData, Blob* blob, ModelData
   model.primitives = (gltfPrimitive*) (model.data + offset), offset += info.primitiveCount * sizeof(gltfPrimitive);
   model.childMap = (uint32_t*) (model.data + offset), offset += info.childCount * sizeof(uint32_t);
 
+  parseAccessors(jsonData, info.buffers.token, &model);
   parseBuffers(jsonData, info.buffers.token, &model, io, (void*) binData);
   parseBufferViews(jsonData, info.bufferViews.token, &model);
   parseNodes(jsonData, info.nodes.token, &model);
