@@ -900,7 +900,7 @@ static int l_lovrGraphicsCompute(lua_State* L) {
 
 static int l_lovrGraphicsNewAnimator(lua_State* L) {
   Model* model = luax_checktype(L, 1, Model);
-  Animator* animator = lovrAnimatorCreate(model->modelData);
+  Animator* animator = lovrAnimatorCreate(model->data);
   luax_pushobject(L, animator);
   lovrRelease(animator);
   return 1;
@@ -1192,42 +1192,19 @@ static int l_lovrGraphicsNewMesh(lua_State* L) {
   return 1;
 }
 
-static ModelDataIO modelDataIO = { lovrFilesystemRead };
-
 static int l_lovrGraphicsNewModel(lua_State* L) {
-  /*ModelData* modelData = luax_totype(L, 1, ModelData);
+  ModelData* modelData = luax_totype(L, 1, ModelData);
 
   if (!modelData) {
     Blob* blob = luax_readblob(L, 1, "Model");
-    modelData = lovrModelDataCreate(blob);
+    static ModelDataIO io = { lovrFilesystemRead };
+    modelData = lovrModelDataCreate(blob, io);
     lovrRelease(blob);
   }
 
   Model* model = lovrModelCreate(modelData);
-
-  if (lua_gettop(L) >= 2) {
-    if (lua_type(L, 2) == LUA_TSTRING) {
-      Blob* blob = luax_readblob(L, 2, "Texture");
-      TextureData* textureData = lovrTextureDataCreateFromBlob(blob, true);
-      Texture* texture = lovrTextureCreate(TEXTURE_2D, &textureData, 1, true, true, 0);
-      Material* material = lovrMaterialCreate();
-      lovrMaterialSetTexture(material, TEXTURE_DIFFUSE, texture);
-      lovrModelSetMaterial(model, material);
-      lovrRelease(blob);
-      lovrRelease(texture);
-      lovrRelease(material);
-    } else {
-      lovrModelSetMaterial(model, luax_checktype(L, 2, Material));
-    }
-  }
-
   luax_pushobject(L, model);
-  lovrRelease(modelData);
-  lovrRelease(model);*/
-  Blob* blob = luax_readblob(L, 1, "Model");
-  gltfModelData* modelData = lovrModelDataCreateFromGltf(blob, modelDataIO);
-  gltfModel* model = lovrModelCreateGltf(modelData);
-  luax_pushobject(L, model);
+  lovrRelease(model);
   return 1;
 }
 
