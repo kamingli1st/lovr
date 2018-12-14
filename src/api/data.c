@@ -147,7 +147,7 @@ static int l_lovrDataNewVertexData(lua_State* L) {
   VertexData* vertexData = lovrVertexDataCreate(count, hasFormat ? &format : NULL);
 
   if (dataIndex) {
-    luax_loadvertices(L, dataIndex, &vertexData->format, (VertexPointer) { .raw = vertexData->blob.data });
+    luax_loadvertices(L, dataIndex, &vertexData->format, (AttributePointer) { .raw = vertexData->blob.data });
   }
   luax_pushobject(L, vertexData);
   lovrRelease(vertexData);

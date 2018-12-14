@@ -26,9 +26,13 @@ const char* ArcModes[] = {
 };
 
 const char* AttributeTypes[] = {
-  [ATTR_FLOAT] = "float",
-  [ATTR_BYTE] = "byte",
-  [ATTR_INT] = "int",
+  [I8] = "i8",
+  [U8] = "u8",
+  [I16] = "i16",
+  [U16] = "u16",
+  [I32] = "i32",
+  [U32] = "u32",
+  [F32] = "f32",
   NULL
 };
 
@@ -1155,9 +1159,9 @@ static int l_lovrGraphicsNewMesh(lua_State* L) {
   }
 
   if (!hasFormat) {
-    vertexFormatAppend(&format, "lovrPosition", ATTR_FLOAT, 3);
-    vertexFormatAppend(&format, "lovrNormal", ATTR_FLOAT, 3);
-    vertexFormatAppend(&format, "lovrTexCoord", ATTR_FLOAT, 2);
+    vertexFormatAppend(&format, "lovrPosition", F32, 3);
+    vertexFormatAppend(&format, "lovrNormal", F32, 3);
+    vertexFormatAppend(&format, "lovrTexCoord", F32, 2);
   }
 
   DrawMode mode = luaL_checkoption(L, drawModeIndex, "fan", DrawModes);
@@ -1169,7 +1173,7 @@ static int l_lovrGraphicsNewMesh(lua_State* L) {
 
   lovrMeshAttachAttribute(mesh, "lovrDrawID", &(MeshAttribute) {
     .buffer = lovrGraphicsGetIdentityBuffer(),
-    .type = ATTR_BYTE,
+    .type = U8,
     .components = 1,
     .divisor = 1,
     .integer = true,
@@ -1177,8 +1181,8 @@ static int l_lovrGraphicsNewMesh(lua_State* L) {
   });
 
   if (dataIndex) {
-    VertexPointer vertices = { .raw = lovrBufferMap(vertexBuffer, 0) };
-    luax_loadvertices(L, dataIndex, &format, vertices);
+    AttributePointer vertices = { .raw = lovrBufferMap(vertexBuffer, 0) };
+    luax_loadvertices(L, dataIndex, lovrMeshGetVertexFormat(mesh), vertices);
   } else if (vertexData) {
     void* vertices = lovrBufferMap(vertexBuffer, 0);
     memcpy(vertices, vertexData->blob.data, vertexData->count * vertexData->format.stride);

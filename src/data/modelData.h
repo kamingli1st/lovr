@@ -28,7 +28,7 @@ typedef enum {
   DRAW_TRIANGLE_FAN
 } DrawMode;
 
-typedef enum { I8, U8, I16, U16, I32, U32, F32 } NumberType;
+typedef enum { I8, U8, I16, U16, I32, U32, F32 } AttributeType;
 
 typedef struct {
   uint32_t magic;
@@ -50,7 +50,7 @@ typedef struct {
   int view;
   int count;
   int offset;
-  NumberType type;
+  AttributeType type;
   int components : 3;
   int normalized : 1;
 } ModelAccessor;

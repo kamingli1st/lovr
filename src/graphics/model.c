@@ -30,7 +30,7 @@ Model* lovrModelInit(Model* model, ModelData* data) {
             .buffer = model->buffers[accessor->view],
             .offset = accessor->offset,
             .stride = data->views[accessor->view].stride,
-            .type = accessor->type == F32 ? ATTR_FLOAT : (accessor->type == U8 ? ATTR_BYTE : ATTR_INT),
+            .type = accessor->type,
             .components = accessor->components,
             .enabled = true
           });
@@ -44,7 +44,7 @@ Model* lovrModelInit(Model* model, ModelData* data) {
 
       lovrMeshAttachAttribute(model->meshes[i], "lovrDrawID", &(MeshAttribute) {
         .buffer = lovrGraphicsGetIdentityBuffer(),
-        .type = ATTR_BYTE,
+        .type = U8,
         .components = 1,
         .divisor = 1,
         .integer = true,
