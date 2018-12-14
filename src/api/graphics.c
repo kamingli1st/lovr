@@ -1192,8 +1192,10 @@ static int l_lovrGraphicsNewMesh(lua_State* L) {
   return 1;
 }
 
+static ModelDataIO modelDataIO = { lovrFilesystemRead };
+
 static int l_lovrGraphicsNewModel(lua_State* L) {
-  ModelData* modelData = luax_totype(L, 1, ModelData);
+  /*ModelData* modelData = luax_totype(L, 1, ModelData);
 
   if (!modelData) {
     Blob* blob = luax_readblob(L, 1, "Model");
@@ -1221,7 +1223,11 @@ static int l_lovrGraphicsNewModel(lua_State* L) {
 
   luax_pushobject(L, model);
   lovrRelease(modelData);
-  lovrRelease(model);
+  lovrRelease(model);*/
+  Blob* blob = luax_readblob(L, 1, "Model");
+  gltfModelData* modelData = lovrModelDataCreateFromGltf(blob, modelDataIO);
+  gltfModel* model = lovrModelCreateGltf(modelData);
+  luax_pushobject(L, model);
   return 1;
 }
 
@@ -1454,7 +1460,7 @@ int luaopen_lovr_graphics(lua_State* L) {
   luax_registertype(L, "Font", lovrFont);
   luax_registertype(L, "Material", lovrMaterial);
   luax_registertype(L, "Mesh", lovrMesh);
-  luax_registertype(L, "Model", lovrModel);
+  luax_registertype(L, "gltfModel", lovrModel);
   luax_registertype(L, "Shader", lovrShader);
   luax_registertype(L, "ShaderBlock", lovrShaderBlock);
   luax_registertype(L, "Texture", lovrTexture);

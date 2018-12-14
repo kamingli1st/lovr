@@ -172,3 +172,13 @@ const char* lovrShaderTextureUniforms[] = {
   "lovrNormalTexture",
   "lovrEnvironmentTexture"
 };
+
+const char* lovrShaderAttributeNames[] = {
+  "lovrPosition",
+  "lovrNormal",
+  "lovrTexCoord",
+  "lovrVertexColor",
+  "lovrTangent",
+  "lovrBones",
+  "lovrBoneWeights"
+};

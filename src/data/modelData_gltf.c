@@ -22,24 +22,6 @@
 #define TOK_BOOL(j, t) (*(j + t->start) == 't')
 #define TOK_FLOAT(j, t) strtof(j + t->start, NULL)
 
-typedef enum { I8, U8, I16, U16, I32, U32, F32 } NumberType;
-
-typedef struct {
-  uint32_t magic;
-  uint32_t version;
-  uint32_t length;
-} gltfHeader;
-
-typedef struct {
-  uint32_t length;
-  uint32_t type;
-} gltfChunkHeader;
-
-typedef struct {
-  char* data;
-  size_t length;
-} gltfString;
-
 typedef struct {
   struct { int count; jsmntok_t* token; } accessors;
   struct { int count; jsmntok_t* token; } buffers;
@@ -49,56 +31,6 @@ typedef struct {
   int childCount;
   int primitiveCount;
 } gltfInfo;
-
-typedef struct {
-  int bufferView;
-  int count;
-  int offset;
-  NumberType type;
-  int components : 2;
-  int normalized : 1;
-} gltfAccessor;
-
-typedef struct {
-  void* data;
-  size_t size;
-} gltfBuffer;
-
-typedef struct {
-  int buffer;
-  int offset;
-  int length;
-  int stride;
-} gltfBufferView;
-
-typedef struct {
-  float transform[16];
-  uint32_t* children;
-  uint32_t childCount;
-  int mesh;
-} gltfNode;
-
-typedef struct {
-  int material;
-  int drawMode;
-} gltfPrimitive;
-
-typedef struct {
-  gltfPrimitive* primitives;
-  uint32_t primitiveCount;
-} gltfMesh;
-
-typedef struct {
-  Ref ref;
-  uint8_t* data;
-  gltfAccessor* accessors;
-  gltfBuffer* buffers;
-  gltfBufferView* bufferViews;
-  gltfNode* nodes;
-  gltfMesh* meshes;
-  gltfPrimitive* primitives;
-  uint32_t* childMap;
-} gltfModel;
 
 static int nomString(const char* data, jsmntok_t* token, gltfString* string) {
   lovrAssert(token->type == JSMN_STRING, "Expected string");
@@ -173,7 +105,7 @@ static void preparse(const char* json, jsmntok_t* tokens, int tokenCount, gltfIn
   }
 }
 
-static void parseAccessors(const char* json, jsmntok_t* token, gltfModel* gltf) {
+static void parseAccessors(const char* json, jsmntok_t* token, gltfModelData* gltf) {
   if (!token) return;
 
   int count = (token++)->size;
@@ -210,6 +142,8 @@ static void parseAccessors(const char* json, jsmntok_t* token, gltfModel* gltf) 
           accessor->components = type.data[3] - '0';
         } else if (type.length == 4 && type.data[0] == 'M') {
           lovrThrow("Matrix accessors are not supported");
+        } else {
+          lovrThrow("Unknown attribute type");
         }
       } else if (KEY_EQ(key, "normalized")) {
         accessor->normalized = TOK_BOOL(json, token), token++;
@@ -220,7 +154,7 @@ static void parseAccessors(const char* json, jsmntok_t* token, gltfModel* gltf) 
   }
 }
 
-static void parseBuffers(const char* json, jsmntok_t* token, gltfModel* gltf, ModelDataIO io, void* binData) {
+static void parseBuffers(const char* json, jsmntok_t* token, gltfModelData* gltf, ModelDataIO io, void* binData) {
   if (!token) return;
 
   int count = (token++)->size;
@@ -256,7 +190,7 @@ static void parseBuffers(const char* json, jsmntok_t* token, gltfModel* gltf, Mo
   }
 }
 
-static void parseBufferViews(const char* json, jsmntok_t* token, gltfModel* gltf) {
+static void parseBufferViews(const char* json, jsmntok_t* token, gltfModelData* gltf) {
   if (!token) return;
 
   int count = (token++)->size;
@@ -282,7 +216,7 @@ static void parseBufferViews(const char* json, jsmntok_t* token, gltfModel* gltf
   }
 }
 
-static void parseNodes(const char* json, jsmntok_t* token, gltfModel* gltf) {
+static void parseNodes(const char* json, jsmntok_t* token, gltfModelData* gltf) {
   if (!token) return;
 
   int childIndex = 0;
@@ -344,17 +278,55 @@ static void parseNodes(const char* json, jsmntok_t* token, gltfModel* gltf) {
   }
 }
 
-static jsmntok_t* parsePrimitive(const char* json, jsmntok_t* token, int index, gltfModel* gltf) {
+static jsmntok_t* parsePrimitive(const char* json, jsmntok_t* token, int index, gltfModelData* gltf) {
   gltfString key;
   gltfPrimitive* primitive = &gltf->primitives[index];
   int keyCount = (token++)->size; // Enter object
+  memset(primitive->attributes, 0xff, sizeof(primitive->attributes));
+  primitive->indices = -1;
+
   for (int k = 0; k < keyCount; k++) {
     token += nomString(json, token, &key);
 
     if (KEY_EQ(key, "material")) {
       primitive->material = TOK_INT(json, token), token++;
+    } else if (KEY_EQ(key, "indices")) {
+      primitive->indices = TOK_INT(json, token), token++;
     } else if (KEY_EQ(key, "mode")) {
-      primitive->drawMode = TOK_INT(json, token), token++;
+      switch (TOK_INT(json, token)) {
+        case 0: primitive->mode = DRAW_POINTS; break;
+        case 1: primitive->mode = DRAW_LINES; break;
+        case 2: primitive->mode = DRAW_LINE_LOOP; break;
+        case 3: primitive->mode = DRAW_LINE_STRIP; break;
+        case 4: primitive->mode = DRAW_TRIANGLES; break;
+        case 5: primitive->mode = DRAW_TRIANGLE_STRIP; break;
+        case 6: primitive->mode = DRAW_TRIANGLE_FAN; break;
+        default: lovrThrow("Unknown primitive mode");
+      }
+      token++;
+    } else if (KEY_EQ(key, "attributes")) {
+      int attributeCount = (token++)->size;
+      for (int i = 0; i < attributeCount; i++) {
+        gltfString name;
+        token += nomString(json, token, &name);
+        int accessor = TOK_INT(json, token);
+        if (KEY_EQ(name, "POSITION")) {
+          primitive->attributes[ATTR_POSITION] = accessor;
+        } else if (KEY_EQ(name, "NORMAL")) {
+          primitive->attributes[ATTR_NORMAL] = accessor;
+        } else if (KEY_EQ(name, "TEXCOORD_0")) {
+          primitive->attributes[ATTR_TEXCOORD] = accessor;
+        } else if (KEY_EQ(name, "COLOR_0")) {
+          primitive->attributes[ATTR_COLOR] = accessor;
+        } else if (KEY_EQ(name, "TANGENT")) {
+          primitive->attributes[ATTR_TANGENT] = accessor;
+        } else if (KEY_EQ(name, "JOINTS_0")) {
+          primitive->attributes[ATTR_BONES] = accessor;
+        } else if (KEY_EQ(name, "WEIGHTS_0")) {
+          primitive->attributes[ATTR_WEIGHTS] = accessor;
+        }
+        token++;
+      }
     } else {
       token += nomValue(json, token, 1, 0); // Skip
     }
@@ -362,7 +334,7 @@ static jsmntok_t* parsePrimitive(const char* json, jsmntok_t* token, int index, 
   return token;
 }
 
-static void parseMeshes(const char* json, jsmntok_t* token, gltfModel* gltf) {
+static void parseMeshes(const char* json, jsmntok_t* token, gltfModelData* gltf) {
   if (!token) return;
 
   int primitiveIndex = 0;
@@ -387,7 +359,7 @@ static void parseMeshes(const char* json, jsmntok_t* token, gltfModel* gltf) {
   }
 }
 
-ModelData* lovrModelDataInitFromGltf(ModelData* modelData, Blob* blob, ModelDataIO io) {
+gltfModelData* lovrModelDataInitFromGltf(gltfModelData* model, Blob* blob, ModelDataIO io) {
   uint8_t* data = blob->data;
   gltfHeader* header = (gltfHeader*) data;
   bool glb = header->magic == MAGIC_glTF;
@@ -426,21 +398,30 @@ ModelData* lovrModelDataInitFromGltf(ModelData* modelData, Blob* blob, ModelData
   preparse(jsonData, tokens, tokenCount, &info, &dataSize);
 
   size_t offset = 0;
-  gltfModel model;
-  model.data = calloc(1, dataSize);
-  model.accessors = (gltfAccessor*) (model.data + offset), offset += info.accessors.count * sizeof(gltfAccessor);
-  model.buffers = (gltfBuffer*) (model.data + offset), offset += info.buffers.count * sizeof(gltfBuffer);
-  model.bufferViews = (gltfBufferView*) (model.data + offset), offset += info.bufferViews.count * sizeof(gltfBufferView);
-  model.nodes = (gltfNode*) (model.data + offset), offset += info.nodes.count * sizeof(gltfNode);
-  model.meshes = (gltfMesh*) (model.data + offset), offset += info.meshes.count * sizeof(gltfMesh);
-  model.primitives = (gltfPrimitive*) (model.data + offset), offset += info.primitiveCount * sizeof(gltfPrimitive);
-  model.childMap = (uint32_t*) (model.data + offset), offset += info.childCount * sizeof(uint32_t);
+  model->data = calloc(1, dataSize);
+  model->accessorCount = info.accessors.count;
+  model->bufferCount = info.buffers.count;
+  model->bufferViewCount = info.bufferViews.count;
+  model->meshCount = info.meshes.count;
+  model->nodeCount = info.nodes.count;
+  model->primitiveCount = info.primitiveCount;
+  model->accessors = (gltfAccessor*) (model->data + offset), offset += info.accessors.count * sizeof(gltfAccessor);
+  model->buffers = (gltfBuffer*) (model->data + offset), offset += info.buffers.count * sizeof(gltfBuffer);
+  model->bufferViews = (gltfBufferView*) (model->data + offset), offset += info.bufferViews.count * sizeof(gltfBufferView);
+  model->meshes = (gltfMesh*) (model->data + offset), offset += info.meshes.count * sizeof(gltfMesh);
+  model->nodes = (gltfNode*) (model->data + offset), offset += info.nodes.count * sizeof(gltfNode);
+  model->primitives = (gltfPrimitive*) (model->data + offset), offset += info.primitiveCount * sizeof(gltfPrimitive);
+  model->childMap = (uint32_t*) (model->data + offset), offset += info.childCount * sizeof(uint32_t);
 
-  parseAccessors(jsonData, info.buffers.token, &model);
-  parseBuffers(jsonData, info.buffers.token, &model, io, (void*) binData);
-  parseBufferViews(jsonData, info.bufferViews.token, &model);
-  parseNodes(jsonData, info.nodes.token, &model);
-  parseMeshes(jsonData, info.meshes.token, &model);
+  parseAccessors(jsonData, info.accessors.token, model);
+  parseBuffers(jsonData, info.buffers.token, model, io, (void*) binData);
+  parseBufferViews(jsonData, info.bufferViews.token, model);
+  parseNodes(jsonData, info.nodes.token, model);
+  parseMeshes(jsonData, info.meshes.token, model);
 
-  return NULL;
+  return model;
+}
+
+void lovrgltfModelDataDestroy(void* ref) {
+
 }

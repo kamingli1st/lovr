@@ -1954,6 +1954,13 @@ Mesh* lovrMeshInit(Mesh* mesh, DrawMode mode, VertexFormat format, Buffer* verte
   return mesh;
 }
 
+Mesh* lovrMeshInitEmpty(Mesh* mesh, DrawMode mode) {
+  mesh->mode = mode;
+  glGenVertexArrays(1, &mesh->vao);
+  map_init(&mesh->attributes);
+  return mesh;
+}
+
 void lovrMeshDestroy(void* ref) {
   Mesh* mesh = ref;
   lovrGraphicsFlushMesh(mesh);

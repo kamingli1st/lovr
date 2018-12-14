@@ -1,5 +1,6 @@
 #include "data/modelData.h"
 #include "graphics/animator.h"
+#include "graphics/buffer.h"
 #include "graphics/material.h"
 #include "graphics/mesh.h"
 #include "graphics/texture.h"
@@ -8,6 +9,16 @@
 #include <stdbool.h>
 
 #pragma once
+
+typedef struct {
+  Ref ref;
+  gltfModelData* data;
+  Buffer** buffers;
+  Mesh** meshes;
+} gltfModel;
+
+void lovrgltfModelDestroy(void* ref);
+void lovrGltfModelDraw(gltfModel* model, mat4 transform, int instances);
 
 typedef struct {
   Ref ref;
@@ -24,7 +35,9 @@ typedef struct {
 } Model;
 
 Model* lovrModelInit(Model* model, ModelData* modelData);
+gltfModel* lovrModelInitGltf(gltfModel* model, gltfModelData* modelData);
 #define lovrModelCreate(...) lovrModelInit(lovrAlloc(Model), __VA_ARGS__)
+#define lovrModelCreateGltf(...) lovrModelInitGltf(lovrAlloc(gltfModel), __VA_ARGS__)
 void lovrModelDestroy(void* ref);
 void lovrModelDraw(Model* model, mat4 transform, int instances);
 Animator* lovrModelGetAnimator(Model* model);

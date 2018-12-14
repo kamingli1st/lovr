@@ -47,10 +47,11 @@ static ModelDataIO modelDataIO = { lovrFilesystemRead };
 static int l_lovrDataNewModelData(lua_State* L) {
   Blob* blob = luax_readblob(L, 1, "Model");
   //ModelData* modelData = lovrModelDataCreate(blob);
-  ModelData* modelData2 = lovrModelDataCreateFromGltf(blob, modelDataIO);
-  luax_pushobject(L, modelData2);
+  //luax_pushobject(L, modelData);
+  gltfModelData* modelData2 = lovrModelDataCreateFromGltf(blob, modelDataIO);
+  lua_pushnil(L);
   lovrRelease(blob);
-  lovrRelease(modelData2);
+  //lovrRelease(modelData);
   return 1;
 }
 
