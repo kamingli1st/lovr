@@ -1441,7 +1441,7 @@ int luaopen_lovr_graphics(lua_State* L) {
   luax_registertype(L, "Font", lovrFont);
   luax_registertype(L, "Material", lovrMaterial);
   luax_registertype(L, "Mesh", lovrMesh);
-  luax_registertype(L, "gltfModel", lovrModel);
+  luax_registertype(L, "Model", lovrModel);
   luax_registertype(L, "Shader", lovrShader);
   luax_registertype(L, "ShaderBlock", lovrShaderBlock);
   luax_registertype(L, "Texture", lovrTexture);
