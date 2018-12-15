@@ -284,6 +284,7 @@ static jsmntok_t* parsePrimitive(const char* json, jsmntok_t* token, int index, 
   int keyCount = (token++)->size; // Enter object
   memset(primitive->attributes, 0xff, sizeof(primitive->attributes));
   primitive->indices = -1;
+  primitive->mode = DRAW_TRIANGLES;
 
   for (int k = 0; k < keyCount; k++) {
     token += nomString(json, token, &key);
