@@ -3,24 +3,14 @@
 #include "lib/jsmn/jsmn.h"
 #include <stdbool.h>
 
-// Notes:
-//   - We parse in two passes.
-//     - In the first pass we figure out how much memory we need to allocate.
-//     - Then we allocate the memory and do a second pass to fill everything in.
-//   - Plan is to make this parser destructive, so it mutates the input Blob in order to avoid doing
-//     work in some situations, for speed.  May make sense to provide a non-destructive option.
-//     - Currently this is most useful for reusing string memory by changing quotes to \0's.
-//   - Caveats:
-//     - The IO callback must not hang onto the filenames that are passed into it.
-
 #define MAGIC_glTF 0x46546c67
 #define MAGIC_JSON 0x4e4f534a
 #define MAGIC_BIN 0x004e4942
 
 #define KEY_EQ(k, s) !strncmp(k.data, s, k.length)
-#define TOK_INT(j, t) strtol(j + t->start, NULL, 10)
-#define TOK_BOOL(j, t) (*(j + t->start) == 't')
-#define TOK_FLOAT(j, t) strtof(j + t->start, NULL)
+#define NOM_INT(j, t) strtol(j + (t++)->start, NULL, 10)
+#define NOM_BOOL(j, t) (*(j + (t++)->start) == 't')
+#define NOM_FLOAT(j, t) strtof(j + (t++)->start, NULL)
 
 typedef struct {
   struct { int count; jsmntok_t* token; } accessors;
@@ -126,13 +116,13 @@ static void parseAccessors(const char* json, jsmntok_t* token, ModelData* model)
     for (int k = 0; k < keyCount; k++) {
       token += nomString(json, token, &key);
       if (KEY_EQ(key, "bufferView")) {
-        accessor->view = TOK_INT(json, token), token++;
+        accessor->view = NOM_INT(json, token);
       } else if (KEY_EQ(key, "count")) {
-        accessor->count = TOK_INT(json, token), token++;
+        accessor->count = NOM_INT(json, token);
       } else if (KEY_EQ(key, "byteOffset")) {
-        accessor->offset = TOK_INT(json, token), token++;
+        accessor->offset = NOM_INT(json, token);
       } else if (KEY_EQ(key, "componentType")) {
-        switch (TOK_INT(json, token)) {
+        switch (NOM_INT(json, token)) {
           case 5120: accessor->type = I8; break;
           case 5121: accessor->type = U8; break;
           case 5122: accessor->type = I16; break;
@@ -141,7 +131,6 @@ static void parseAccessors(const char* json, jsmntok_t* token, ModelData* model)
           case 5126: accessor->type = F32; break;
           default: break;
         }
-        token++;
       } else if (KEY_EQ(key, "type")) {
         gltfString type;
         token += nomString(json, token, &type);
@@ -155,7 +144,7 @@ static void parseAccessors(const char* json, jsmntok_t* token, ModelData* model)
           lovrThrow("Unknown attribute type");
         }
       } else if (KEY_EQ(key, "normalized")) {
-        accessor->normalized = TOK_BOOL(json, token), token++;
+        accessor->normalized = NOM_BOOL(json, token);
       } else {
         token += nomValue(json, token, 1, 0); // Skip
       }
@@ -177,7 +166,7 @@ static void parseBlobs(const char* json, jsmntok_t* token, ModelData* model, Mod
     for (int k = 0; k < keyCount; k++) {
       token += nomString(json, token, &key);
       if (KEY_EQ(key, "byteLength")) {
-        blob->size = TOK_INT(json, token), token++;
+        blob->size = NOM_INT(json, token);
       } else if (KEY_EQ(key, "uri")) {
         hasUri = true;
         gltfString filename;
@@ -211,14 +200,14 @@ static void parseViews(const char* json, jsmntok_t* token, ModelData* model) {
     for (int k = 0; k < keyCount; k++) {
       token += nomString(json, token, &key);
       if (KEY_EQ(key, "buffer")) {
-        view->blob = TOK_INT(json, token), token++;
+        view->blob = NOM_INT(json, token);
       } else if (KEY_EQ(key, "byteOffset")) {
-        view->offset = TOK_INT(json, token), token++;
+        view->offset = NOM_INT(json, token);
       } else if (KEY_EQ(key, "byteLength")) {
-        view->length = TOK_INT(json, token), token++;
+        view->length = NOM_INT(json, token);
       } else if (KEY_EQ(key, "byteStride")) {
-        view->stride = TOK_INT(json, token), token++;
-    } else {
+        view->stride = NOM_INT(json, token);
+      } else {
         token += nomValue(json, token, 1, 0); // Skip
       }
     }
@@ -246,34 +235,34 @@ static void parseNodes(const char* json, jsmntok_t* token, ModelData* model) {
         node->children = &model->nodeChildren[childIndex];
         node->childCount = (token++)->size;
         for (uint32_t j = 0; j < node->childCount; j++) {
-          model->nodeChildren[childIndex++] = TOK_INT(json, token), token++;
+          model->nodeChildren[childIndex++] = NOM_INT(json, token);
         }
       } else if (KEY_EQ(key, "mesh")) {
-        node->mesh = TOK_INT(json, token), token++;
+        node->mesh = NOM_INT(json, token);
       } else if (KEY_EQ(key, "skin")) {
-        node->skin = TOK_INT(json, token), token++;
+        node->skin = NOM_INT(json, token);
       } else if (KEY_EQ(key, "matrix")) {
         lovrAssert(token->size == 16, "Node matrix needs 16 elements");
         matrix = true;
         for (int j = 0; j < token->size; j++) {
-          node->transform[j] = TOK_FLOAT(json, token), token++;
+          node->transform[j] = NOM_FLOAT(json, token);
         }
       } else if (KEY_EQ(key, "translation")) {
         lovrAssert(token->size == 3, "Node translation needs 3 elements");
-        translation[0] = TOK_FLOAT(json, token), token++;
-        translation[1] = TOK_FLOAT(json, token), token++;
-        translation[2] = TOK_FLOAT(json, token), token++;
+        translation[0] = NOM_FLOAT(json, token);
+        translation[1] = NOM_FLOAT(json, token);
+        translation[2] = NOM_FLOAT(json, token);
       } else if (KEY_EQ(key, "rotation")) {
         lovrAssert(token->size == 4, "Node rotation needs 4 elements");
-        rotation[0] = TOK_FLOAT(json, token), token++;
-        rotation[1] = TOK_FLOAT(json, token), token++;
-        rotation[2] = TOK_FLOAT(json, token), token++;
-        rotation[3] = TOK_FLOAT(json, token), token++;
+        rotation[0] = NOM_FLOAT(json, token);
+        rotation[1] = NOM_FLOAT(json, token);
+        rotation[2] = NOM_FLOAT(json, token);
+        rotation[3] = NOM_FLOAT(json, token);
       } else if (KEY_EQ(key, "scale")) {
         lovrAssert(token->size == 3, "Node scale needs 3 elements");
-        scale[0] = TOK_FLOAT(json, token), token++;
-        scale[1] = TOK_FLOAT(json, token), token++;
-        scale[2] = TOK_FLOAT(json, token), token++;
+        scale[0] = NOM_FLOAT(json, token);
+        scale[1] = NOM_FLOAT(json, token);
+        scale[2] = NOM_FLOAT(json, token);
       } else {
         token += nomValue(json, token, 1, 0); // Skip
       }
@@ -301,11 +290,11 @@ static jsmntok_t* parsePrimitive(const char* json, jsmntok_t* token, int index, 
     token += nomString(json, token, &key);
 
     if (KEY_EQ(key, "material")) {
-      primitive->material = TOK_INT(json, token), token++;
+      primitive->material = NOM_INT(json, token);
     } else if (KEY_EQ(key, "indices")) {
-      primitive->indices = TOK_INT(json, token), token++;
+      primitive->indices = NOM_INT(json, token);
     } else if (KEY_EQ(key, "mode")) {
-      switch (TOK_INT(json, token)) {
+      switch (NOM_INT(json, token)) {
         case 0: primitive->mode = DRAW_POINTS; break;
         case 1: primitive->mode = DRAW_LINES; break;
         case 2: primitive->mode = DRAW_LINE_LOOP; break;
@@ -315,13 +304,12 @@ static jsmntok_t* parsePrimitive(const char* json, jsmntok_t* token, int index, 
         case 6: primitive->mode = DRAW_TRIANGLE_FAN; break;
         default: lovrThrow("Unknown primitive mode");
       }
-      token++;
     } else if (KEY_EQ(key, "attributes")) {
       int attributeCount = (token++)->size;
       for (int i = 0; i < attributeCount; i++) {
         gltfString name;
         token += nomString(json, token, &name);
-        int accessor = TOK_INT(json, token);
+        int accessor = NOM_INT(json, token);
         if (KEY_EQ(name, "POSITION")) {
           primitive->attributes[ATTR_POSITION] = accessor;
         } else if (KEY_EQ(name, "NORMAL")) {
@@ -337,7 +325,6 @@ static jsmntok_t* parsePrimitive(const char* json, jsmntok_t* token, int index, 
         } else if (KEY_EQ(name, "WEIGHTS_0")) {
           primitive->attributes[ATTR_WEIGHTS] = accessor;
         }
-        token++;
       }
     } else {
       token += nomValue(json, token, 1, 0); // Skip
@@ -383,14 +370,14 @@ static void parseSkins(const char* json, jsmntok_t* token, ModelData* model) {
     for (int k = 0; k < keyCount; k++) {
       token += nomString(json, token, &key);
       if (KEY_EQ(key, "inverseBindMatrices")) {
-        skin->inverseBindMatrices = TOK_INT(json, token), token++;
+        skin->inverseBindMatrices = NOM_INT(json, token);
       } else if (KEY_EQ(key, "skeleton")) {
-        skin->skeleton = TOK_INT(json, token), token++;
+        skin->skeleton = NOM_INT(json, token);
       } else if (KEY_EQ(key, "joints")) {
         skin->joints = &model->skinJoints[jointIndex];
         skin->jointCount = (token++)->size;
         for (uint32_t j = 0; j < skin->jointCount; j++) {
-          model->skinJoints[jointIndex++] = TOK_INT(json, token), token++;
+          model->skinJoints[jointIndex++] = NOM_INT(json, token);
         }
       } else {
         token += nomValue(json, token, 1, 0); // Skip
