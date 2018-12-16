@@ -20,15 +20,15 @@ typedef struct {
 } gltfString;
 
 typedef struct {
-  struct { int count; jsmntok_t* token; } accessors;
-  struct { int count; jsmntok_t* token; } animations;
-  struct { int count; jsmntok_t* token; } blobs;
-  struct { int count; jsmntok_t* token; } views;
-  struct { int count; jsmntok_t* token; } nodes;
-  struct { int count; jsmntok_t* token; } meshes;
-  struct { int count; jsmntok_t* token; } skins;
+  size_t totalSize;
+  jsmntok_t* accessors;
+  jsmntok_t* animations;
+  jsmntok_t* blobs;
+  jsmntok_t* views;
+  jsmntok_t* nodes;
+  jsmntok_t* meshes;
+  jsmntok_t* skins;
   int childCount;
-  int primitiveCount;
   int jointCount;
 } gltfInfo;
 
@@ -68,53 +68,53 @@ static jsmntok_t* aggregate(const char* json, jsmntok_t* token, const char* targ
   return token;
 }
 
-static void preparse(const char* json, jsmntok_t* tokens, int tokenCount, gltfInfo* info, size_t* dataSize) {
+static void preparse(const char* json, jsmntok_t* tokens, int tokenCount, ModelData* model, gltfInfo* info) {
   for (jsmntok_t* token = tokens + 1; token < tokens + tokenCount;) { // +1 to skip root object
     switch (NOM_KEY(json, token)) {
       case HASH16("accessors"):
-        info->accessors.token = token;
-        info->accessors.count = token->size;
-        *dataSize += info->accessors.count * sizeof(ModelAccessor);
+        info->accessors = token;
+        model->accessorCount = token->size;
+        info->totalSize += token->size * sizeof(ModelAccessor);
         token += nomValue(json, token, 1, 0);
         break;
       case HASH16("animations"):
-        info->animations.token = token;
-        info->animations.count = token->size;
-        *dataSize += info->animations.count * sizeof(ModelAnimation);
+        info->animations = token;
+        model->animationCount = token->size;
+        info->totalSize += token->size * sizeof(ModelAnimation);
         token += nomValue(json, token, 1, 0);
         break;
       case HASH16("buffers"):
-        info->blobs.token = token;
-        info->blobs.count = token->size;
-        *dataSize += info->blobs.count * sizeof(ModelBlob);
+        info->blobs = token;
+        model->blobCount = token->size;
+        info->totalSize += token->size * sizeof(ModelBlob);
         token += nomValue(json, token, 1, 0);
         break;
       case HASH16("bufferViews"):
-        info->views.token = token;
-        info->views.count = token->size;
-        *dataSize += info->views.count * sizeof(ModelView);
+        info->views = token;
+        model->viewCount = token->size;
+        info->totalSize += token->size * sizeof(ModelView);
         token += nomValue(json, token, 1, 0);
         break;
       case HASH16("nodes"):
-        info->nodes.token = token;
-        info->nodes.count = token->size;
-        *dataSize += info->nodes.count * sizeof(ModelNode);
+        info->nodes = token;
+        model->nodeCount = token->size;
+        info->totalSize += token->size * sizeof(ModelNode);
         token = aggregate(json, token, "children", &info->childCount);
-        *dataSize += info->childCount * sizeof(uint32_t);
+        info->totalSize += info->childCount * sizeof(uint32_t);
         break;
       case HASH16("meshes"):
-        info->meshes.token = token;
-        info->meshes.count = token->size;
-        *dataSize += info->meshes.count * sizeof(ModelMesh);
-        token = aggregate(json, token, "primitives", &info->primitiveCount);
-        *dataSize += info->primitiveCount * sizeof(ModelPrimitive);
+        info->meshes = token;
+        model->meshCount = token->size;
+        info->totalSize += token->size * sizeof(ModelMesh);
+        token = aggregate(json, token, "primitives", &model->primitiveCount);
+        info->totalSize += model->primitiveCount * sizeof(ModelPrimitive);
         break;
       case HASH16("skins"):
-        info->skins.token = token;
-        info->skins.count = token->size;
-        *dataSize += info->skins.count * sizeof(ModelSkin);
+        info->skins = token;
+        model->skinCount = token->size;
+        info->totalSize += token->size * sizeof(ModelSkin);
         token = aggregate(json, token, "joints", &info->jointCount);
-        *dataSize += info->jointCount * sizeof(uint32_t);
+        info->totalSize += info->jointCount * sizeof(uint32_t);
         break;
       default: token += nomValue(json, token, 1, 0); break;
     }
@@ -181,7 +181,6 @@ static void parseBlobs(const char* json, jsmntok_t* token, ModelData* model, Mod
   int count = (token++)->size;
   for (int i = 0; i < count; i++) {
     ModelBlob* blob = &model->blobs[i];
-    gltfString key;
     int keyCount = (token++)->size;
     size_t bytesRead = 0;
     bool hasUri = false;
@@ -367,7 +366,6 @@ static void parseSkins(const char* json, jsmntok_t* token, ModelData* model) {
   int jointIndex = 0;
   int count = (token++)->size; // Enter array
   for (int i = 0; i < count; i++) {
-    gltfString key;
     ModelSkin* skin = &model->skins[i];
     int keyCount = (token++)->size;
     for (int k = 0; k < keyCount; k++) {
@@ -418,45 +416,35 @@ ModelData* lovrModelDataInit(ModelData* model, Blob* blob, ModelDataIO io) {
 
   jsmn_parser parser;
   jsmn_init(&parser);
-
   jsmntok_t tokens[1024]; // TODO malloc or token queue
   int tokenCount = jsmn_parse(&parser, jsonData, jsonLength, tokens, 1024);
   lovrAssert(tokenCount >= 0, "Invalid JSON");
   lovrAssert(tokens[0].type == JSMN_OBJECT, "No root object");
 
   gltfInfo info = { 0 };
-  size_t dataSize = 0;
-  preparse(jsonData, tokens, tokenCount, &info, &dataSize);
+  preparse(jsonData, tokens, tokenCount, model, &info);
 
   size_t offset = 0;
-  model->data = calloc(1, dataSize);
-  model->glbBlob = glb ? blob : NULL;
-  model->accessorCount = info.accessors.count;
-  model->animationCount = info.animations.count;
-  model->blobCount = info.blobs.count;
-  model->viewCount = info.views.count;
-  model->primitiveCount = info.primitiveCount;
-  model->meshCount = info.meshes.count;
-  model->nodeCount = info.nodes.count;
-  model->skinCount = info.skins.count;
-  model->accessors = (ModelAccessor*) (model->data + offset), offset += info.accessors.count * sizeof(ModelAccessor);
-  model->animations = (ModelAnimation*) (model->data + offset), offset += info.animations.count * sizeof(ModelAnimation);
-  model->blobs = (ModelBlob*) (model->data + offset), offset += info.blobs.count * sizeof(ModelBlob);
-  model->views = (ModelView*) (model->data + offset), offset += info.views.count * sizeof(ModelView);
-  model->primitives = (ModelPrimitive*) (model->data + offset), offset += info.primitiveCount * sizeof(ModelPrimitive);
-  model->meshes = (ModelMesh*) (model->data + offset), offset += info.meshes.count * sizeof(ModelMesh);
-  model->nodes = (ModelNode*) (model->data + offset), offset += info.nodes.count * sizeof(ModelNode);
-  model->skins = (ModelSkin*) (model->data + offset), offset += info.skins.count * sizeof(ModelSkin);
+  model->data = calloc(1, info.totalSize);
+  model->binaryBlob = glb ? blob : NULL;
+  model->accessors = (ModelAccessor*) (model->data + offset), offset += model->accessorCount * sizeof(ModelAccessor);
+  model->animations = (ModelAnimation*) (model->data + offset), offset += model->animationCount * sizeof(ModelAnimation);
+  model->blobs = (ModelBlob*) (model->data + offset), offset += model->blobCount * sizeof(ModelBlob);
+  model->views = (ModelView*) (model->data + offset), offset += model->viewCount * sizeof(ModelView);
+  model->primitives = (ModelPrimitive*) (model->data + offset), offset += model->primitiveCount * sizeof(ModelPrimitive);
+  model->meshes = (ModelMesh*) (model->data + offset), offset += model->meshCount * sizeof(ModelMesh);
+  model->nodes = (ModelNode*) (model->data + offset), offset += model->nodeCount * sizeof(ModelNode);
+  model->skins = (ModelSkin*) (model->data + offset), offset += model->skinCount * sizeof(ModelSkin);
   model->nodeChildren = (uint32_t*) (model->data + offset), offset += info.childCount * sizeof(uint32_t);
   model->skinJoints = (uint32_t*) (model->data + offset), offset += info.jointCount * sizeof(uint32_t);
 
-  parseAccessors(jsonData, info.accessors.token, model);
-  parseAnimations(jsonData, info.animations.token, model);
-  parseBlobs(jsonData, info.blobs.token, model, io, (void*) binData);
-  parseViews(jsonData, info.views.token, model);
-  parseNodes(jsonData, info.nodes.token, model);
-  parseMeshes(jsonData, info.meshes.token, model);
-  parseSkins(jsonData, info.skins.token, model);
+  parseAccessors(jsonData, info.accessors, model);
+  parseAnimations(jsonData, info.animations, model);
+  parseBlobs(jsonData, info.blobs, model, io, (void*) binData);
+  parseViews(jsonData, info.views, model);
+  parseNodes(jsonData, info.nodes, model);
+  parseMeshes(jsonData, info.meshes, model);
+  parseSkins(jsonData, info.skins, model);
 
   return model;
 }

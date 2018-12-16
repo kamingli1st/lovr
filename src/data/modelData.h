@@ -119,7 +119,7 @@ typedef struct {
 typedef struct {
   Ref ref;
   uint8_t* data;
-  Blob* glbBlob;
+  Blob* binaryBlob;
   ModelAccessor* accessors;
   ModelAnimation* animations;
   ModelBlob* blobs;
