@@ -241,6 +241,8 @@ static void parseNodes(const char* json, jsmntok_t* token, ModelData* model) {
         }
       } else if (KEY_EQ(key, "mesh")) {
         node->mesh = TOK_INT(json, token), token++;
+      } else if (KEY_EQ(key, "skin")) {
+        node->skin = TOK_INT(json, token), token++;
       } else if (KEY_EQ(key, "matrix")) {
         lovrAssert(token->size == 16, "Node matrix needs 16 elements");
         matrix = true;

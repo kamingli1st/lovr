@@ -84,6 +84,7 @@ typedef struct {
   uint32_t* children;
   uint32_t childCount;
   int mesh;
+  int skin;
 } ModelNode;
 
 typedef struct {
