@@ -20,6 +20,7 @@ typedef struct {
 
 typedef struct {
   struct { int count; jsmntok_t* token; } accessors;
+  struct { int count; jsmntok_t* token; } animations;
   struct { int count; jsmntok_t* token; } blobs;
   struct { int count; jsmntok_t* token; } views;
   struct { int count; jsmntok_t* token; } nodes;
@@ -66,6 +67,11 @@ static void preparse(const char* json, jsmntok_t* tokens, int tokenCount, gltfIn
       info->accessors.token = token;
       info->accessors.count = token->size;
       *dataSize += info->accessors.count * sizeof(ModelAccessor);
+      token += nomValue(json, token, 1, 0);
+    } else if (KEY_EQ(key, "animations")) {
+      info->animations.token = token;
+      info->animations.count = token->size;
+      *dataSize += info->animations.count * sizeof(ModelAnimation);
       token += nomValue(json, token, 1, 0);
     } else if (KEY_EQ(key, "buffers")) {
       info->blobs.token = token;
@@ -143,6 +149,20 @@ static void parseAccessors(const char* json, jsmntok_t* token, ModelData* model)
       } else {
         token += nomValue(json, token, 1, 0); // Skip
       }
+    }
+  }
+}
+
+static void parseAnimations(const char* json, jsmntok_t* token, ModelData* model) {
+  if (!token) return;
+
+  int count = (token++)->size;
+  for (int i = 0; i < count; i++) {
+    ModelAnimation* animation = &model->animations[i];
+
+    int keyCount = (token++)->size;
+    for (int k = 0; k < keyCount; k++) {
+      token += nomValue(json, token, 1, 0);
     }
   }
 }
@@ -420,6 +440,7 @@ ModelData* lovrModelDataInit(ModelData* model, Blob* blob, ModelDataIO io) {
   model->data = calloc(1, dataSize);
   model->glbBlob = glb ? blob : NULL;
   model->accessorCount = info.accessors.count;
+  model->animationCount = info.animations.count;
   model->blobCount = info.blobs.count;
   model->viewCount = info.views.count;
   model->primitiveCount = info.primitiveCount;
@@ -427,6 +448,7 @@ ModelData* lovrModelDataInit(ModelData* model, Blob* blob, ModelDataIO io) {
   model->nodeCount = info.nodes.count;
   model->skinCount = info.skins.count;
   model->accessors = (ModelAccessor*) (model->data + offset), offset += info.accessors.count * sizeof(ModelAccessor);
+  model->animations = (ModelAnimation*) (model->data + offset), offset += info.animations.count * sizeof(ModelAnimation);
   model->blobs = (ModelBlob*) (model->data + offset), offset += info.blobs.count * sizeof(ModelBlob);
   model->views = (ModelView*) (model->data + offset), offset += info.views.count * sizeof(ModelView);
   model->primitives = (ModelPrimitive*) (model->data + offset), offset += info.primitiveCount * sizeof(ModelPrimitive);
@@ -437,6 +459,7 @@ ModelData* lovrModelDataInit(ModelData* model, Blob* blob, ModelDataIO io) {
   model->skinJoints = (uint32_t*) (model->data + offset), offset += info.jointCount * sizeof(uint32_t);
 
   parseAccessors(jsonData, info.accessors.token, model);
+  parseAnimations(jsonData, info.animations.token, model);
   parseBlobs(jsonData, info.blobs.token, model, io, (void*) binData);
   parseViews(jsonData, info.views.token, model);
   parseNodes(jsonData, info.nodes.token, model);

@@ -51,6 +51,10 @@ typedef struct {
 } ModelAccessor;
 
 typedef struct {
+  const char* name;
+} ModelAnimation;
+
+typedef struct {
   void* data;
   size_t size;
 } ModelBlob;
@@ -117,21 +121,24 @@ typedef struct {
   uint8_t* data;
   Blob* glbBlob;
   ModelAccessor* accessors;
+  ModelAnimation* animations;
   ModelBlob* blobs;
   ModelView* views;
   ModelPrimitive* primitives;
   ModelMesh* meshes;
   ModelNode* nodes;
   ModelSkin* skins;
-  uint32_t* nodeChildren;
-  uint32_t* skinJoints;
   int accessorCount;
+  int animationCount;
   int blobCount;
   int viewCount;
   int primitiveCount;
   int meshCount;
   int nodeCount;
   int skinCount;
+  char* names;
+  uint32_t* nodeChildren;
+  uint32_t* skinJoints;
 } ModelData;
 
 typedef struct {
