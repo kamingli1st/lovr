@@ -9,6 +9,7 @@
 
 #define KEY_EQ(k, s) !strncmp(k.data, s, k.length)
 #define NOM_STR(j, t) (gltfString) { (char*) j + t->start, t->end - t->start }; t++
+#define NOM_KEY(j, t) hashKey((char*) j + (t++)->start)
 #define NOM_INT(j, t) strtol(j + (t++)->start, NULL, 10)
 #define NOM_BOOL(j, t) (*(j + (t++)->start) == 't')
 #define NOM_FLOAT(j, t) strtof(j + (t++)->start, NULL)
@@ -30,6 +31,14 @@ typedef struct {
   int primitiveCount;
   int jointCount;
 } gltfInfo;
+
+static uint32_t hashKey(char* key) {
+  uint32_t hash = 0;
+  for (int i = 0; key[i] != '"'; i++) {
+    hash = (hash * 65599) + key[i];
+  }
+  return hash ^ (hash >> 16);
+}
 
 static int nomValue(const char* data, jsmntok_t* token, int count, int sum) {
   if (count == 0) { return sum; }
@@ -61,48 +70,53 @@ static jsmntok_t* aggregate(const char* json, jsmntok_t* token, const char* targ
 
 static void preparse(const char* json, jsmntok_t* tokens, int tokenCount, gltfInfo* info, size_t* dataSize) {
   for (jsmntok_t* token = tokens + 1; token < tokens + tokenCount;) { // +1 to skip root object
-    gltfString key = NOM_STR(json, token);
-
-    if (KEY_EQ(key, "accessors")) {
-      info->accessors.token = token;
-      info->accessors.count = token->size;
-      *dataSize += info->accessors.count * sizeof(ModelAccessor);
-      token += nomValue(json, token, 1, 0);
-    } else if (KEY_EQ(key, "animations")) {
-      info->animations.token = token;
-      info->animations.count = token->size;
-      *dataSize += info->animations.count * sizeof(ModelAnimation);
-      token += nomValue(json, token, 1, 0);
-    } else if (KEY_EQ(key, "buffers")) {
-      info->blobs.token = token;
-      info->blobs.count = token->size;
-      *dataSize += info->blobs.count * sizeof(ModelBlob);
-      token += nomValue(json, token, 1, 0);
-    } else if (KEY_EQ(key, "bufferViews")) {
-      info->views.token = token;
-      info->views.count = token->size;
-      *dataSize += info->views.count * sizeof(ModelView);
-      token += nomValue(json, token, 1, 0);
-    } else if (KEY_EQ(key, "nodes")) {
-      info->nodes.token = token;
-      info->nodes.count = token->size;
-      *dataSize += info->nodes.count * sizeof(ModelNode);
-      token = aggregate(json, token, "children", &info->childCount);
-      *dataSize += info->childCount * sizeof(uint32_t);
-    } else if (KEY_EQ(key, "meshes")) {
-      info->meshes.token = token;
-      info->meshes.count = token->size;
-      *dataSize += info->meshes.count * sizeof(ModelMesh);
-      token = aggregate(json, token, "primitives", &info->primitiveCount);
-      *dataSize += info->primitiveCount * sizeof(ModelPrimitive);
-    } else if (KEY_EQ(key, "skins")) {
-      info->skins.token = token;
-      info->skins.count = token->size;
-      *dataSize += info->skins.count * sizeof(ModelSkin);
-      token = aggregate(json, token, "joints", &info->jointCount);
-      *dataSize += info->jointCount * sizeof(uint32_t);
-    } else {
-      token += nomValue(json, token, 1, 0); // Skip
+    switch (NOM_KEY(json, token)) {
+      case HASH16("accessors"):
+        info->accessors.token = token;
+        info->accessors.count = token->size;
+        *dataSize += info->accessors.count * sizeof(ModelAccessor);
+        token += nomValue(json, token, 1, 0);
+        break;
+      case HASH16("animations"):
+        info->animations.token = token;
+        info->animations.count = token->size;
+        *dataSize += info->animations.count * sizeof(ModelAnimation);
+        token += nomValue(json, token, 1, 0);
+        break;
+      case HASH16("buffers"):
+        info->blobs.token = token;
+        info->blobs.count = token->size;
+        *dataSize += info->blobs.count * sizeof(ModelBlob);
+        token += nomValue(json, token, 1, 0);
+        break;
+      case HASH16("bufferViews"):
+        info->views.token = token;
+        info->views.count = token->size;
+        *dataSize += info->views.count * sizeof(ModelView);
+        token += nomValue(json, token, 1, 0);
+        break;
+      case HASH16("nodes"):
+        info->nodes.token = token;
+        info->nodes.count = token->size;
+        *dataSize += info->nodes.count * sizeof(ModelNode);
+        token = aggregate(json, token, "children", &info->childCount);
+        *dataSize += info->childCount * sizeof(uint32_t);
+        break;
+      case HASH16("meshes"):
+        info->meshes.token = token;
+        info->meshes.count = token->size;
+        *dataSize += info->meshes.count * sizeof(ModelMesh);
+        token = aggregate(json, token, "primitives", &info->primitiveCount);
+        *dataSize += info->primitiveCount * sizeof(ModelPrimitive);
+        break;
+      case HASH16("skins"):
+        info->skins.token = token;
+        info->skins.count = token->size;
+        *dataSize += info->skins.count * sizeof(ModelSkin);
+        token = aggregate(json, token, "joints", &info->jointCount);
+        *dataSize += info->jointCount * sizeof(uint32_t);
+        break;
+      default: token += nomValue(json, token, 1, 0); break;
     }
   }
 }
@@ -116,38 +130,32 @@ static void parseAccessors(const char* json, jsmntok_t* token, ModelData* model)
     int keyCount = (token++)->size;
 
     for (int k = 0; k < keyCount; k++) {
-      gltfString key = NOM_STR(json, token);
-      if (KEY_EQ(key, "bufferView")) {
-        accessor->view = NOM_INT(json, token);
-      } else if (KEY_EQ(key, "count")) {
-        accessor->count = NOM_INT(json, token);
-      } else if (KEY_EQ(key, "byteOffset")) {
-        accessor->offset = NOM_INT(json, token);
-      } else if (KEY_EQ(key, "componentType")) {
-        switch (NOM_INT(json, token)) {
-          case 5120: accessor->type = I8; break;
-          case 5121: accessor->type = U8; break;
-          case 5122: accessor->type = I16; break;
-          case 5123: accessor->type = U16; break;
-          case 5125: accessor->type = U32; break;
-          case 5126: accessor->type = F32; break;
-          default: break;
-        }
-      } else if (KEY_EQ(key, "type")) {
-        gltfString type = NOM_STR(json, token);
-        if (KEY_EQ(type, "SCALAR")) {
-          accessor->components = 1;
-        } else if (type.length == 4 && type.data[0] == 'V') {
-          accessor->components = type.data[3] - '0';
-        } else if (type.length == 4 && type.data[0] == 'M') {
-          lovrThrow("Matrix accessors are not supported");
-        } else {
-          lovrThrow("Unknown attribute type");
-        }
-      } else if (KEY_EQ(key, "normalized")) {
-        accessor->normalized = NOM_BOOL(json, token);
-      } else {
-        token += nomValue(json, token, 1, 0); // Skip
+      switch (NOM_KEY(json, token)) {
+        case HASH16("bufferView"): accessor->view = NOM_INT(json, token); break;
+        case HASH16("count"): accessor->count = NOM_INT(json, token); break;
+        case HASH16("byteOffset"): accessor->offset = NOM_INT(json, token); break;
+        case HASH16("normalized"): accessor->normalized = NOM_BOOL(json, token); break;
+        case HASH16("componentType"):
+          switch (NOM_INT(json, token)) {
+            case 5120: accessor->type = I8; break;
+            case 5121: accessor->type = U8; break;
+            case 5122: accessor->type = I16; break;
+            case 5123: accessor->type = U16; break;
+            case 5125: accessor->type = U32; break;
+            case 5126: accessor->type = F32; break;
+            default: break;
+          }
+          break;
+        case HASH16("type"):
+          switch (NOM_KEY(json, token)) {
+            case HASH16("SCALAR"): accessor->components += 1; break;
+            case HASH16("VEC2"): accessor->components += 2; break;
+            case HASH16("VEC3"): accessor->components += 3; break;
+            case HASH16("VEC4"): accessor->components += 4; break;
+            default: lovrThrow("Unsupported accessor type"); break;
+          }
+          break;
+        default: token += nomValue(json, token, 1, 0); break;
       }
     }
   }
@@ -179,17 +187,16 @@ static void parseBlobs(const char* json, jsmntok_t* token, ModelData* model, Mod
     bool hasUri = false;
 
     for (int k = 0; k < keyCount; k++) {
-      gltfString key = NOM_STR(json, token);
-      if (KEY_EQ(key, "byteLength")) {
-        blob->size = NOM_INT(json, token);
-      } else if (KEY_EQ(key, "uri")) {
-        hasUri = true;
-        gltfString filename = NOM_STR(json, token);
-        filename.data[filename.length] = '\0'; // Change the quote into a terminator (I'll be b0k)
-        blob->data = io.read(filename.data, &bytesRead);
-        lovrAssert(blob->data, "Unable to read %s", filename.data);
-      } else {
-        token += nomValue(json, token, 1, 0); // Skip
+      switch (NOM_KEY(json, token)) {
+        case HASH16("byteLength"): blob->size = NOM_INT(json, token); break;
+        case HASH16("uri"):
+          hasUri = true;
+          gltfString filename = NOM_STR(json, token);
+          filename.data[filename.length] = '\0'; // Change the quote into a terminator (I'll be b0k)
+          blob->data = io.read(filename.data, &bytesRead);
+          lovrAssert(blob->data, "Unable to read %s", filename.data);
+          break;
+        default: token += nomValue(json, token, 1, 0); break;
       }
     }
 
@@ -211,17 +218,12 @@ static void parseViews(const char* json, jsmntok_t* token, ModelData* model) {
     int keyCount = (token++)->size;
 
     for (int k = 0; k < keyCount; k++) {
-      gltfString key = NOM_STR(json, token);
-      if (KEY_EQ(key, "buffer")) {
-        view->blob = NOM_INT(json, token);
-      } else if (KEY_EQ(key, "byteOffset")) {
-        view->offset = NOM_INT(json, token);
-      } else if (KEY_EQ(key, "byteLength")) {
-        view->length = NOM_INT(json, token);
-      } else if (KEY_EQ(key, "byteStride")) {
-        view->stride = NOM_INT(json, token);
-      } else {
-        token += nomValue(json, token, 1, 0); // Skip
+      switch (NOM_KEY(json, token)) {
+        case HASH16("buffer"): view->blob = NOM_INT(json, token); break;
+        case HASH16("byteOffset"): view->offset = NOM_INT(json, token); break;
+        case HASH16("byteLength"): view->length = NOM_INT(json, token); break;
+        case HASH16("byteStride"): view->stride = NOM_INT(json, token); break;
+        default: token += nomValue(json, token, 1, 0); break;
       }
     }
   }
@@ -241,42 +243,43 @@ static void parseNodes(const char* json, jsmntok_t* token, ModelData* model) {
 
     int keyCount = (token++)->size; // Enter object
     for (int k = 0; k < keyCount; k++) {
-      gltfString key = NOM_STR(json, token);
-
-      if (KEY_EQ(key, "children")) {
-        node->children = &model->nodeChildren[childIndex];
-        node->childCount = (token++)->size;
-        for (uint32_t j = 0; j < node->childCount; j++) {
-          model->nodeChildren[childIndex++] = NOM_INT(json, token);
-        }
-      } else if (KEY_EQ(key, "mesh")) {
-        node->mesh = NOM_INT(json, token);
-      } else if (KEY_EQ(key, "skin")) {
-        node->skin = NOM_INT(json, token);
-      } else if (KEY_EQ(key, "matrix")) {
-        lovrAssert(token->size == 16, "Node matrix needs 16 elements");
-        matrix = true;
-        for (int j = 0; j < token->size; j++) {
-          node->transform[j] = NOM_FLOAT(json, token);
-        }
-      } else if (KEY_EQ(key, "translation")) {
-        lovrAssert(token->size == 3, "Node translation needs 3 elements");
-        translation[0] = NOM_FLOAT(json, token);
-        translation[1] = NOM_FLOAT(json, token);
-        translation[2] = NOM_FLOAT(json, token);
-      } else if (KEY_EQ(key, "rotation")) {
-        lovrAssert(token->size == 4, "Node rotation needs 4 elements");
-        rotation[0] = NOM_FLOAT(json, token);
-        rotation[1] = NOM_FLOAT(json, token);
-        rotation[2] = NOM_FLOAT(json, token);
-        rotation[3] = NOM_FLOAT(json, token);
-      } else if (KEY_EQ(key, "scale")) {
-        lovrAssert(token->size == 3, "Node scale needs 3 elements");
-        scale[0] = NOM_FLOAT(json, token);
-        scale[1] = NOM_FLOAT(json, token);
-        scale[2] = NOM_FLOAT(json, token);
-      } else {
-        token += nomValue(json, token, 1, 0); // Skip
+      switch (NOM_KEY(json, token)) {
+        case HASH16("mesh"): node->mesh = NOM_INT(json, token); break;
+        case HASH16("skin"): node->skin = NOM_INT(json, token); break;
+        case HASH16("children"):
+          node->children = &model->nodeChildren[childIndex];
+          node->childCount = (token++)->size;
+          for (uint32_t j = 0; j < node->childCount; j++) {
+            model->nodeChildren[childIndex++] = NOM_INT(json, token);
+          }
+          break;
+        case HASH16("matrix"):
+          lovrAssert(token->size == 16, "Node matrix needs 16 elements");
+          matrix = true;
+          for (int j = 0; j < token->size; j++) {
+            node->transform[j] = NOM_FLOAT(json, token);
+          }
+          break;
+        case HASH16("translation"):
+          lovrAssert(token->size == 3, "Node translation needs 3 elements");
+          translation[0] = NOM_FLOAT(json, token);
+          translation[1] = NOM_FLOAT(json, token);
+          translation[2] = NOM_FLOAT(json, token);
+          break;
+        case HASH16("rotation"):
+          lovrAssert(token->size == 4, "Node rotation needs 4 elements");
+          rotation[0] = NOM_FLOAT(json, token);
+          rotation[1] = NOM_FLOAT(json, token);
+          rotation[2] = NOM_FLOAT(json, token);
+          rotation[3] = NOM_FLOAT(json, token);
+          break;
+        case HASH16("scale"):
+          lovrAssert(token->size == 3, "Node scale needs 3 elements");
+          scale[0] = NOM_FLOAT(json, token);
+          scale[1] = NOM_FLOAT(json, token);
+          scale[2] = NOM_FLOAT(json, token);
+          break;
+        default: token += nomValue(json, token, 1, 0); break;
       }
     }
 
@@ -298,46 +301,38 @@ static jsmntok_t* parsePrimitive(const char* json, jsmntok_t* token, int index, 
   primitive->mode = DRAW_TRIANGLES;
 
   for (int k = 0; k < keyCount; k++) {
-    gltfString key = NOM_STR(json, token);
-
-    if (KEY_EQ(key, "material")) {
-      primitive->material = NOM_INT(json, token);
-    } else if (KEY_EQ(key, "indices")) {
-      primitive->indices = NOM_INT(json, token);
-    } else if (KEY_EQ(key, "mode")) {
-      switch (NOM_INT(json, token)) {
-        case 0: primitive->mode = DRAW_POINTS; break;
-        case 1: primitive->mode = DRAW_LINES; break;
-        case 2: primitive->mode = DRAW_LINE_LOOP; break;
-        case 3: primitive->mode = DRAW_LINE_STRIP; break;
-        case 4: primitive->mode = DRAW_TRIANGLES; break;
-        case 5: primitive->mode = DRAW_TRIANGLE_STRIP; break;
-        case 6: primitive->mode = DRAW_TRIANGLE_FAN; break;
-        default: lovrThrow("Unknown primitive mode");
-      }
-    } else if (KEY_EQ(key, "attributes")) {
-      int attributeCount = (token++)->size;
-      for (int i = 0; i < attributeCount; i++) {
-        gltfString name = NOM_STR(json, token);
-        int accessor = NOM_INT(json, token);
-        if (KEY_EQ(name, "POSITION")) {
-          primitive->attributes[ATTR_POSITION] = accessor;
-        } else if (KEY_EQ(name, "NORMAL")) {
-          primitive->attributes[ATTR_NORMAL] = accessor;
-        } else if (KEY_EQ(name, "TEXCOORD_0")) {
-          primitive->attributes[ATTR_TEXCOORD] = accessor;
-        } else if (KEY_EQ(name, "COLOR_0")) {
-          primitive->attributes[ATTR_COLOR] = accessor;
-        } else if (KEY_EQ(name, "TANGENT")) {
-          primitive->attributes[ATTR_TANGENT] = accessor;
-        } else if (KEY_EQ(name, "JOINTS_0")) {
-          primitive->attributes[ATTR_BONES] = accessor;
-        } else if (KEY_EQ(name, "WEIGHTS_0")) {
-          primitive->attributes[ATTR_WEIGHTS] = accessor;
+    switch (NOM_KEY(json, token)) {
+      case HASH16("material"): primitive->material = NOM_INT(json, token); break;
+      case HASH16("indices"): primitive->indices = NOM_INT(json, token); break;
+      case HASH16("mode"):
+        switch (NOM_INT(json, token)) {
+          case 0: primitive->mode = DRAW_POINTS; break;
+          case 1: primitive->mode = DRAW_LINES; break;
+          case 2: primitive->mode = DRAW_LINE_LOOP; break;
+          case 3: primitive->mode = DRAW_LINE_STRIP; break;
+          case 4: primitive->mode = DRAW_TRIANGLES; break;
+          case 5: primitive->mode = DRAW_TRIANGLE_STRIP; break;
+          case 6: primitive->mode = DRAW_TRIANGLE_FAN; break;
+          default: lovrThrow("Unknown primitive mode");
         }
+        break;
+      case HASH16("attributes"): {
+        int attributeCount = (token++)->size;
+        for (int i = 0; i < attributeCount; i++) {
+          switch (NOM_KEY(json, token)) {
+            case HASH16("POSITION"): primitive->attributes[ATTR_POSITION] = NOM_INT(json, token); break;
+            case HASH16("NORMAL"): primitive->attributes[ATTR_NORMAL] = NOM_INT(json, token); break;
+            case HASH16("TEXCOORD_0"): primitive->attributes[ATTR_TEXCOORD] = NOM_INT(json, token); break;
+            case HASH16("COLOR_0"): primitive->attributes[ATTR_COLOR] = NOM_INT(json, token); break;
+            case HASH16("TANGENT"): primitive->attributes[ATTR_TANGENT] = NOM_INT(json, token); break;
+            case HASH16("JOINTS_0"): primitive->attributes[ATTR_BONES] = NOM_INT(json, token); break;
+            case HASH16("WEIGHTS_0"): primitive->attributes[ATTR_WEIGHTS] = NOM_INT(json, token); break;
+            default: break;
+          }
+        }
+        break;
       }
-    } else {
-      token += nomValue(json, token, 1, 0); // Skip
+      default: token += nomValue(json, token, 1, 0); break;
     }
   }
   return token;
@@ -352,16 +347,15 @@ static void parseMeshes(const char* json, jsmntok_t* token, ModelData* model) {
     ModelMesh* mesh = &model->meshes[i];
     int keyCount = (token++)->size; // Enter object
     for (int k = 0; k < keyCount; k++) {
-      gltfString key = NOM_STR(json, token);
-
-      if (KEY_EQ(key, "primitives")) {
-        mesh->primitives = &model->primitives[primitiveIndex];
-        mesh->primitiveCount = (token++)->size;
-        for (uint32_t j = 0; j < mesh->primitiveCount; j++) {
-          token = parsePrimitive(json, token, primitiveIndex++, model);
-        }
-      } else {
-        token += nomValue(json, token, 1, 0); // Skip
+      switch (NOM_KEY(json, token)) {
+        case HASH16("primitives"):
+          mesh->primitives = &model->primitives[primitiveIndex];
+          mesh->primitiveCount = (token++)->size;
+          for (uint32_t j = 0; j < mesh->primitiveCount; j++) {
+            token = parsePrimitive(json, token, primitiveIndex++, model);
+          }
+          break;
+        default: token += nomValue(json, token, 1, 0); break;
       }
     }
   }
@@ -377,19 +371,17 @@ static void parseSkins(const char* json, jsmntok_t* token, ModelData* model) {
     ModelSkin* skin = &model->skins[i];
     int keyCount = (token++)->size;
     for (int k = 0; k < keyCount; k++) {
-      gltfString key = NOM_STR(json, token);
-      if (KEY_EQ(key, "inverseBindMatrices")) {
-        skin->inverseBindMatrices = NOM_INT(json, token);
-      } else if (KEY_EQ(key, "skeleton")) {
-        skin->skeleton = NOM_INT(json, token);
-      } else if (KEY_EQ(key, "joints")) {
-        skin->joints = &model->skinJoints[jointIndex];
-        skin->jointCount = (token++)->size;
-        for (uint32_t j = 0; j < skin->jointCount; j++) {
-          model->skinJoints[jointIndex++] = NOM_INT(json, token);
-        }
-      } else {
-        token += nomValue(json, token, 1, 0); // Skip
+      switch (NOM_KEY(json, token)) {
+        case HASH64("inverseBindMatrices"): skin->inverseBindMatrices = NOM_INT(json, token); break;
+        case HASH16("skeleton"): skin->skeleton = NOM_INT(json, token); break;
+        case HASH16("joints"):
+          skin->joints = &model->skinJoints[jointIndex];
+          skin->jointCount = (token++)->size;
+          for (uint32_t j = 0; j < skin->jointCount; j++) {
+            model->skinJoints[jointIndex++] = NOM_INT(json, token);
+          }
+          break;
+        default: token += nomValue(json, token, 1, 0); break;
       }
     }
   }
