@@ -42,11 +42,6 @@ typedef struct {
 } gltfChunkHeader;
 
 typedef struct {
-  char* data;
-  size_t length;
-} gltfString;
-
-typedef struct {
   int view;
   int count;
   int offset;

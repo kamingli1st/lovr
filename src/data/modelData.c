@@ -8,9 +8,15 @@
 #define MAGIC_BIN 0x004e4942
 
 #define KEY_EQ(k, s) !strncmp(k.data, s, k.length)
+#define NOM_STR(j, t) (gltfString) { (char*) j + t->start, t->end - t->start }; t++
 #define NOM_INT(j, t) strtol(j + (t++)->start, NULL, 10)
 #define NOM_BOOL(j, t) (*(j + (t++)->start) == 't')
 #define NOM_FLOAT(j, t) strtof(j + (t++)->start, NULL)
+
+typedef struct {
+  char* data;
+  size_t length;
+} gltfString;
 
 typedef struct {
   struct { int count; jsmntok_t* token; } accessors;
@@ -23,13 +29,6 @@ typedef struct {
   int primitiveCount;
   int jointCount;
 } gltfInfo;
-
-static int nomString(const char* data, jsmntok_t* token, gltfString* string) {
-  lovrAssert(token->type == JSMN_STRING, "Expected string");
-  string->data = (char*) data + token->start;
-  string->length = token->end - token->start;
-  return 1;
-}
 
 static int nomValue(const char* data, jsmntok_t* token, int count, int sum) {
   if (count == 0) { return sum; }
@@ -48,8 +47,7 @@ static jsmntok_t* aggregate(const char* json, jsmntok_t* token, const char* targ
     if (token->size > 0) {
       int keys = (token++)->size;
       for (int k = 0; k < keys; k++) {
-        gltfString key;
-        token += nomString(json, token, &key);
+        gltfString key = NOM_STR(json, token);
         if (KEY_EQ(key, target)) {
           *total += token->size;
         }
@@ -62,8 +60,7 @@ static jsmntok_t* aggregate(const char* json, jsmntok_t* token, const char* targ
 
 static void preparse(const char* json, jsmntok_t* tokens, int tokenCount, gltfInfo* info, size_t* dataSize) {
   for (jsmntok_t* token = tokens + 1; token < tokens + tokenCount;) { // +1 to skip root object
-    gltfString key;
-    token += nomString(json, token, &key);
+    gltfString key = NOM_STR(json, token);
 
     if (KEY_EQ(key, "accessors")) {
       info->accessors.token = token;
@@ -110,11 +107,10 @@ static void parseAccessors(const char* json, jsmntok_t* token, ModelData* model)
   int count = (token++)->size;
   for (int i = 0; i < count; i++) {
     ModelAccessor* accessor = &model->accessors[i];
-    gltfString key;
     int keyCount = (token++)->size;
 
     for (int k = 0; k < keyCount; k++) {
-      token += nomString(json, token, &key);
+      gltfString key = NOM_STR(json, token);
       if (KEY_EQ(key, "bufferView")) {
         accessor->view = NOM_INT(json, token);
       } else if (KEY_EQ(key, "count")) {
@@ -132,8 +128,7 @@ static void parseAccessors(const char* json, jsmntok_t* token, ModelData* model)
           default: break;
         }
       } else if (KEY_EQ(key, "type")) {
-        gltfString type;
-        token += nomString(json, token, &type);
+        gltfString type = NOM_STR(json, token);
         if (KEY_EQ(type, "SCALAR")) {
           accessor->components = 1;
         } else if (type.length == 4 && type.data[0] == 'V') {
@@ -164,13 +159,12 @@ static void parseBlobs(const char* json, jsmntok_t* token, ModelData* model, Mod
     bool hasUri = false;
 
     for (int k = 0; k < keyCount; k++) {
-      token += nomString(json, token, &key);
+      gltfString key = NOM_STR(json, token);
       if (KEY_EQ(key, "byteLength")) {
         blob->size = NOM_INT(json, token);
       } else if (KEY_EQ(key, "uri")) {
         hasUri = true;
-        gltfString filename;
-        token += nomString(json, token, &filename);
+        gltfString filename = NOM_STR(json, token);
         filename.data[filename.length] = '\0'; // Change the quote into a terminator (I'll be b0k)
         blob->data = io.read(filename.data, &bytesRead);
         lovrAssert(blob->data, "Unable to read %s", filename.data);
@@ -194,11 +188,10 @@ static void parseViews(const char* json, jsmntok_t* token, ModelData* model) {
   int count = (token++)->size;
   for (int i = 0; i < count; i++) {
     ModelView* view = &model->views[i];
-    gltfString key;
     int keyCount = (token++)->size;
 
     for (int k = 0; k < keyCount; k++) {
-      token += nomString(json, token, &key);
+      gltfString key = NOM_STR(json, token);
       if (KEY_EQ(key, "buffer")) {
         view->blob = NOM_INT(json, token);
       } else if (KEY_EQ(key, "byteOffset")) {
@@ -226,10 +219,9 @@ static void parseNodes(const char* json, jsmntok_t* token, ModelData* model) {
     float scale[3] = { 1, 1, 1 };
     bool matrix = false;
 
-    gltfString key;
     int keyCount = (token++)->size; // Enter object
     for (int k = 0; k < keyCount; k++) {
-      token += nomString(json, token, &key);
+      gltfString key = NOM_STR(json, token);
 
       if (KEY_EQ(key, "children")) {
         node->children = &model->nodeChildren[childIndex];
@@ -279,7 +271,6 @@ static void parseNodes(const char* json, jsmntok_t* token, ModelData* model) {
 }
 
 static jsmntok_t* parsePrimitive(const char* json, jsmntok_t* token, int index, ModelData* model) {
-  gltfString key;
   ModelPrimitive* primitive = &model->primitives[index];
   int keyCount = (token++)->size; // Enter object
   memset(primitive->attributes, 0xff, sizeof(primitive->attributes));
@@ -287,7 +278,7 @@ static jsmntok_t* parsePrimitive(const char* json, jsmntok_t* token, int index, 
   primitive->mode = DRAW_TRIANGLES;
 
   for (int k = 0; k < keyCount; k++) {
-    token += nomString(json, token, &key);
+    gltfString key = NOM_STR(json, token);
 
     if (KEY_EQ(key, "material")) {
       primitive->material = NOM_INT(json, token);
@@ -307,8 +298,7 @@ static jsmntok_t* parsePrimitive(const char* json, jsmntok_t* token, int index, 
     } else if (KEY_EQ(key, "attributes")) {
       int attributeCount = (token++)->size;
       for (int i = 0; i < attributeCount; i++) {
-        gltfString name;
-        token += nomString(json, token, &name);
+        gltfString name = NOM_STR(json, token);
         int accessor = NOM_INT(json, token);
         if (KEY_EQ(name, "POSITION")) {
           primitive->attributes[ATTR_POSITION] = accessor;
@@ -339,11 +329,10 @@ static void parseMeshes(const char* json, jsmntok_t* token, ModelData* model) {
   int primitiveIndex = 0;
   int count = (token++)->size; // Enter array
   for (int i = 0; i < count; i++) {
-    gltfString key;
     ModelMesh* mesh = &model->meshes[i];
     int keyCount = (token++)->size; // Enter object
     for (int k = 0; k < keyCount; k++) {
-      token += nomString(json, token, &key);
+      gltfString key = NOM_STR(json, token);
 
       if (KEY_EQ(key, "primitives")) {
         mesh->primitives = &model->primitives[primitiveIndex];
@@ -368,7 +357,7 @@ static void parseSkins(const char* json, jsmntok_t* token, ModelData* model) {
     ModelSkin* skin = &model->skins[i];
     int keyCount = (token++)->size;
     for (int k = 0; k < keyCount; k++) {
-      token += nomString(json, token, &key);
+      gltfString key = NOM_STR(json, token);
       if (KEY_EQ(key, "inverseBindMatrices")) {
         skin->inverseBindMatrices = NOM_INT(json, token);
       } else if (KEY_EQ(key, "skeleton")) {
