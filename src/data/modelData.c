@@ -446,9 +446,10 @@ ModelData* lovrModelDataInit(ModelData* model, Blob* blob, ModelDataIO io) {
   model->accessorCount = info.accessors.count;
   model->blobCount = info.blobs.count;
   model->viewCount = info.views.count;
+  model->primitiveCount = info.primitiveCount;
   model->meshCount = info.meshes.count;
   model->nodeCount = info.nodes.count;
-  model->primitiveCount = info.primitiveCount;
+  model->skinCount = info.skins.count;
   model->accessors = (ModelAccessor*) (model->data + offset), offset += info.accessors.count * sizeof(ModelAccessor);
   model->blobs = (ModelBlob*) (model->data + offset), offset += info.blobs.count * sizeof(ModelBlob);
   model->views = (ModelView*) (model->data + offset), offset += info.views.count * sizeof(ModelView);

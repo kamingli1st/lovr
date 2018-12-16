@@ -133,9 +133,10 @@ typedef struct {
   int accessorCount;
   int blobCount;
   int viewCount;
+  int primitiveCount;
   int meshCount;
   int nodeCount;
-  int primitiveCount;
+  int skinCount;
 } ModelData;
 
 typedef struct {
