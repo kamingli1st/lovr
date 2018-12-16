@@ -93,6 +93,7 @@ static void preparse(const char* json, jsmntok_t* tokens, int tokenCount, gltfIn
       info->nodes.count = token->size;
       *dataSize += info->nodes.count * sizeof(ModelNode);
       token = aggregate(json, token, "children", &info->childCount);
+      *dataSize += info->childCount * sizeof(uint32_t);
     } else if (KEY_EQ(key, "meshes")) {
       info->meshes.token = token;
       info->meshes.count = token->size;
