@@ -120,8 +120,8 @@ static void parseAccessors(const char* json, jsmntok_t* token, ModelData* model)
   int count = (token++)->size;
   for (int i = 0; i < count; i++) {
     ModelAccessor* accessor = &model->accessors[i];
-    int keyCount = (token++)->size;
 
+    int keyCount = (token++)->size;
     for (int k = 0; k < keyCount; k++) {
       switch (NOM_KEY(json, token)) {
         case HASH16("bufferView"): accessor->view = NOM_INT(json, token); break;
@@ -174,10 +174,10 @@ static void parseBlobs(const char* json, jsmntok_t* token, ModelData* model, Mod
   int count = (token++)->size;
   for (int i = 0; i < count; i++) {
     ModelBlob* blob = &model->blobs[i];
-    int keyCount = (token++)->size;
     size_t bytesRead = 0;
     bool hasUri = false;
 
+    int keyCount = (token++)->size;
     for (int k = 0; k < keyCount; k++) {
       switch (NOM_KEY(json, token)) {
         case HASH16("byteLength"): blob->size = NOM_INT(json, token); break;
@@ -209,8 +209,8 @@ static void parseViews(const char* json, jsmntok_t* token, ModelData* model) {
   int count = (token++)->size;
   for (int i = 0; i < count; i++) {
     ModelView* view = &model->views[i];
-    int keyCount = (token++)->size;
 
+    int keyCount = (token++)->size;
     for (int k = 0; k < keyCount; k++) {
       switch (NOM_KEY(json, token)) {
         case HASH16("buffer"): view->blob = NOM_INT(json, token); break;
@@ -289,11 +289,11 @@ static void parseNodes(const char* json, jsmntok_t* token, ModelData* model) {
 
 static jsmntok_t* parsePrimitive(const char* json, jsmntok_t* token, int index, ModelData* model) {
   ModelPrimitive* primitive = &model->primitives[index];
-  int keyCount = (token++)->size; // Enter object
   memset(primitive->attributes, 0xff, sizeof(primitive->attributes));
   primitive->indices = -1;
   primitive->mode = DRAW_TRIANGLES;
 
+  int keyCount = (token++)->size; // Enter object
   for (int k = 0; k < keyCount; k++) {
     switch (NOM_KEY(json, token)) {
       case HASH16("material"): primitive->material = NOM_INT(json, token); break;
@@ -339,6 +339,7 @@ static void parseMeshes(const char* json, jsmntok_t* token, ModelData* model) {
   int count = (token++)->size; // Enter array
   for (int i = 0; i < count; i++) {
     ModelMesh* mesh = &model->meshes[i];
+
     int keyCount = (token++)->size; // Enter object
     for (int k = 0; k < keyCount; k++) {
       switch (NOM_KEY(json, token)) {
@@ -362,6 +363,7 @@ static void parseSkins(const char* json, jsmntok_t* token, ModelData* model) {
   int count = (token++)->size; // Enter array
   for (int i = 0; i < count; i++) {
     ModelSkin* skin = &model->skins[i];
+
     int keyCount = (token++)->size;
     for (int k = 0; k < keyCount; k++) {
       switch (NOM_KEY(json, token)) {
