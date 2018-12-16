@@ -8,16 +8,10 @@
 #define MAGIC_BIN 0x004e4942
 
 #define KEY_EQ(k, s) !strncmp(k.data, s, k.length)
-#define NOM_STR(j, t) (gltfString) { (char*) j + t->start, t->end - t->start }; t++
 #define NOM_KEY(j, t) hashKey((char*) j + (t++)->start)
 #define NOM_INT(j, t) strtol(j + (t++)->start, NULL, 10)
 #define NOM_BOOL(j, t) (*(j + (t++)->start) == 't')
 #define NOM_FLOAT(j, t) strtof(j + (t++)->start, NULL)
-
-typedef struct {
-  char* data;
-  size_t length;
-} gltfString;
 
 typedef struct {
   size_t totalSize;
@@ -50,15 +44,14 @@ static int nomValue(const char* data, jsmntok_t* token, int count, int sum) {
 }
 
 // Kinda like sum(map(arr, obj => #obj[key]))
-static jsmntok_t* aggregate(const char* json, jsmntok_t* token, const char* target, int* total) {
+static jsmntok_t* aggregate(const char* json, jsmntok_t* token, uint32_t hash, int* total) {
   *total = 0;
   int size = (token++)->size;
   for (int i = 0; i < size; i++) {
     if (token->size > 0) {
       int keys = (token++)->size;
       for (int k = 0; k < keys; k++) {
-        gltfString key = NOM_STR(json, token);
-        if (KEY_EQ(key, target)) {
+        if (NOM_KEY(json, token) == hash) {
           *total += token->size;
         }
         token += nomValue(json, token, 1, 0);
@@ -99,21 +92,21 @@ static void preparse(const char* json, jsmntok_t* tokens, int tokenCount, ModelD
         info->nodes = token;
         model->nodeCount = token->size;
         info->totalSize += token->size * sizeof(ModelNode);
-        token = aggregate(json, token, "children", &info->childCount);
+        token = aggregate(json, token, HASH16("children"), &info->childCount);
         info->totalSize += info->childCount * sizeof(uint32_t);
         break;
       case HASH16("meshes"):
         info->meshes = token;
         model->meshCount = token->size;
         info->totalSize += token->size * sizeof(ModelMesh);
-        token = aggregate(json, token, "primitives", &model->primitiveCount);
+        token = aggregate(json, token, HASH16("primitives"), &model->primitiveCount);
         info->totalSize += model->primitiveCount * sizeof(ModelPrimitive);
         break;
       case HASH16("skins"):
         info->skins = token;
         model->skinCount = token->size;
         info->totalSize += token->size * sizeof(ModelSkin);
-        token = aggregate(json, token, "joints", &info->jointCount);
+        token = aggregate(json, token, HASH16("joints"), &info->jointCount);
         info->totalSize += info->jointCount * sizeof(uint32_t);
         break;
       default: token += nomValue(json, token, 1, 0); break;
@@ -190,10 +183,12 @@ static void parseBlobs(const char* json, jsmntok_t* token, ModelData* model, Mod
         case HASH16("byteLength"): blob->size = NOM_INT(json, token); break;
         case HASH16("uri"):
           hasUri = true;
-          gltfString filename = NOM_STR(json, token);
-          filename.data[filename.length] = '\0'; // Change the quote into a terminator (I'll be b0k)
-          blob->data = io.read(filename.data, &bytesRead);
-          lovrAssert(blob->data, "Unable to read %s", filename.data);
+          char* filename = (char*) json + token->start;
+          size_t length = token->end - token->start;
+          filename[length] = '\0'; // Change the quote into a terminator (I'll be b0k)
+          blob->data = io.read(filename, &bytesRead);
+          lovrAssert(blob->data, "Unable to read %s", filename);
+          filename[length] = '"';
           break;
         default: token += nomValue(json, token, 1, 0); break;
       }
