@@ -90,6 +90,8 @@ typedef struct {
 typedef struct {
   uint32_t* joints;
   uint32_t jointCount;
+  int skeleton;
+  int inverseBindMatrices;
 } ModelSkin;
 
 typedef struct {

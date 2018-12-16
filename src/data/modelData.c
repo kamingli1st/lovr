@@ -371,6 +371,34 @@ static void parseMeshes(const char* json, jsmntok_t* token, ModelData* model) {
   }
 }
 
+static void parseSkins(const char* json, jsmntok_t* token, ModelData* model) {
+  if (!token) return;
+
+  int jointIndex = 0;
+  int count = (token++)->size; // Enter array
+  for (int i = 0; i < count; i++) {
+    gltfString key;
+    ModelSkin* skin = &model->skins[i];
+    int keyCount = (token++)->size;
+    for (int k = 0; k < keyCount; k++) {
+      token += nomString(json, token, &key);
+      if (KEY_EQ(key, "inverseBindMatrices")) {
+        skin->inverseBindMatrices = TOK_INT(json, token), token++;
+      } else if (KEY_EQ(key, "skeleton")) {
+        skin->skeleton = TOK_INT(json, token), token++;
+      } else if (KEY_EQ(key, "joints")) {
+        skin->joints = &model->skinJoints[jointIndex];
+        skin->jointCount = (token++)->size;
+        for (uint32_t j = 0; j < skin->jointCount; j++) {
+          model->skinJoints[jointIndex++] = TOK_INT(json, token), token++;
+        }
+      } else {
+        token += nomValue(json, token, 1, 0); // Skip
+      }
+    }
+  }
+}
+
 ModelData* lovrModelDataInit(ModelData* model, Blob* blob, ModelDataIO io) {
   uint8_t* data = blob->data;
   gltfHeader* header = (gltfHeader*) data;
@@ -424,9 +452,10 @@ ModelData* lovrModelDataInit(ModelData* model, Blob* blob, ModelDataIO io) {
   model->accessors = (ModelAccessor*) (model->data + offset), offset += info.accessors.count * sizeof(ModelAccessor);
   model->blobs = (ModelBlob*) (model->data + offset), offset += info.blobs.count * sizeof(ModelBlob);
   model->views = (ModelView*) (model->data + offset), offset += info.views.count * sizeof(ModelView);
+  model->primitives = (ModelPrimitive*) (model->data + offset), offset += info.primitiveCount * sizeof(ModelPrimitive);
   model->meshes = (ModelMesh*) (model->data + offset), offset += info.meshes.count * sizeof(ModelMesh);
   model->nodes = (ModelNode*) (model->data + offset), offset += info.nodes.count * sizeof(ModelNode);
-  model->primitives = (ModelPrimitive*) (model->data + offset), offset += info.primitiveCount * sizeof(ModelPrimitive);
+  model->skins = (ModelSkin*) (model->data + offset), offset += info.skins.count * sizeof(ModelSkin);
   model->nodeChildren = (uint32_t*) (model->data + offset), offset += info.childCount * sizeof(uint32_t);
   model->skinJoints = (uint32_t*) (model->data + offset), offset += info.jointCount * sizeof(uint32_t);
 
@@ -435,6 +464,7 @@ ModelData* lovrModelDataInit(ModelData* model, Blob* blob, ModelDataIO io) {
   parseViews(jsonData, info.views.token, model);
   parseNodes(jsonData, info.nodes.token, model);
   parseMeshes(jsonData, info.meshes.token, model);
+  parseSkins(jsonData, info.skins.token, model);
 
   return model;
 }
