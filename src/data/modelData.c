@@ -28,8 +28,10 @@ typedef struct {
   struct { int count; jsmntok_t* token; } views;
   struct { int count; jsmntok_t* token; } nodes;
   struct { int count; jsmntok_t* token; } meshes;
+  struct { int count; jsmntok_t* token; } skins;
   int childCount;
   int primitiveCount;
+  int jointCount;
 } gltfInfo;
 
 static int nomString(const char* data, jsmntok_t* token, gltfString* string) {
@@ -100,6 +102,12 @@ static void preparse(const char* json, jsmntok_t* tokens, int tokenCount, gltfIn
       *dataSize += info->meshes.count * sizeof(ModelMesh);
       token = aggregate(json, token, "primitives", &info->primitiveCount);
       *dataSize += info->primitiveCount * sizeof(ModelPrimitive);
+    } else if (KEY_EQ(key, "skins")) {
+      info->skins.token = token;
+      info->skins.count = token->size;
+      *dataSize += info->skins.count * sizeof(ModelSkin);
+      token = aggregate(json, token, "joints", &info->jointCount);
+      *dataSize += info->jointCount * sizeof(uint32_t);
     } else {
       token += nomValue(json, token, 1, 0); // Skip
     }
@@ -420,6 +428,7 @@ ModelData* lovrModelDataInit(ModelData* model, Blob* blob, ModelDataIO io) {
   model->nodes = (ModelNode*) (model->data + offset), offset += info.nodes.count * sizeof(ModelNode);
   model->primitives = (ModelPrimitive*) (model->data + offset), offset += info.primitiveCount * sizeof(ModelPrimitive);
   model->nodeChildren = (uint32_t*) (model->data + offset), offset += info.childCount * sizeof(uint32_t);
+  model->skinJoints = (uint32_t*) (model->data + offset), offset += info.jointCount * sizeof(uint32_t);
 
   parseAccessors(jsonData, info.accessors.token, model);
   parseBlobs(jsonData, info.blobs.token, model, io, (void*) binData);

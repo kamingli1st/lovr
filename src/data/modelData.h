@@ -88,6 +88,11 @@ typedef struct {
 } ModelNode;
 
 typedef struct {
+  uint32_t* joints;
+  uint32_t jointCount;
+} ModelSkin;
+
+typedef struct {
   double time;
   float data[4];
 } Keyframe;
@@ -120,7 +125,9 @@ typedef struct {
   ModelPrimitive* primitives;
   ModelMesh* meshes;
   ModelNode* nodes;
+  ModelSkin* skins;
   uint32_t* nodeChildren;
+  uint32_t* skinJoints;
   int accessorCount;
   int blobCount;
   int viewCount;
