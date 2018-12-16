@@ -117,10 +117,10 @@ typedef struct {
   ModelAccessor* accessors;
   ModelBlob* blobs;
   ModelView* views;
+  ModelPrimitive* primitives;
   ModelMesh* meshes;
   ModelNode* nodes;
-  ModelPrimitive* primitives;
-  uint32_t* childMap;
+  uint32_t* nodeChildren;
   int accessorCount;
   int blobCount;
   int viewCount;

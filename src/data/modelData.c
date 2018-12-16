@@ -235,10 +235,10 @@ static void parseNodes(const char* json, jsmntok_t* token, ModelData* model) {
       token += nomString(json, token, &key);
 
       if (KEY_EQ(key, "children")) {
-        node->children = &model->childMap[childIndex];
+        node->children = &model->nodeChildren[childIndex];
         node->childCount = (token++)->size;
         for (uint32_t j = 0; j < node->childCount; j++) {
-          model->childMap[childIndex++] = TOK_INT(json, token), token++;
+          model->nodeChildren[childIndex++] = TOK_INT(json, token), token++;
         }
       } else if (KEY_EQ(key, "mesh")) {
         node->mesh = TOK_INT(json, token), token++;
@@ -419,7 +419,7 @@ ModelData* lovrModelDataInit(ModelData* model, Blob* blob, ModelDataIO io) {
   model->meshes = (ModelMesh*) (model->data + offset), offset += info.meshes.count * sizeof(ModelMesh);
   model->nodes = (ModelNode*) (model->data + offset), offset += info.nodes.count * sizeof(ModelNode);
   model->primitives = (ModelPrimitive*) (model->data + offset), offset += info.primitiveCount * sizeof(ModelPrimitive);
-  model->childMap = (uint32_t*) (model->data + offset), offset += info.childCount * sizeof(uint32_t);
+  model->nodeChildren = (uint32_t*) (model->data + offset), offset += info.childCount * sizeof(uint32_t);
 
   parseAccessors(jsonData, info.accessors.token, model);
   parseBlobs(jsonData, info.blobs.token, model, io, (void*) binData);
