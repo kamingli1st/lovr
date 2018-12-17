@@ -28,6 +28,18 @@ typedef enum {
   DRAW_TRIANGLE_FAN
 } DrawMode;
 
+typedef enum {
+  SMOOTH_STEP,
+  SMOOTH_LINEAR,
+  SMOOTH_CUBIC,
+} SmoothMode;
+
+typedef enum {
+  PROP_TRANSLATION,
+  PROP_ROTATION,
+  PROP_SCALE,
+} AnimationProperty;
+
 typedef enum { I8, U8, I16, U16, I32, U32, F32 } AttributeType;
 
 typedef struct {
@@ -51,7 +63,22 @@ typedef struct {
 } ModelAccessor;
 
 typedef struct {
-  const char* name;
+  int nodeIndex;
+  AnimationProperty property;
+  int sampler;
+} ModelAnimationChannel;
+
+typedef struct {
+  int times;
+  int values;
+  SmoothMode smoothing;
+} ModelAnimationSampler;
+
+typedef struct {
+  ModelAnimationChannel* channels;
+  ModelAnimationSampler* samplers;
+  int channelCount;
+  int samplerCount;
 } ModelAnimation;
 
 typedef struct {
@@ -121,6 +148,8 @@ typedef struct {
   uint8_t* data;
   Blob* binaryBlob;
   ModelAccessor* accessors;
+  ModelAnimationChannel* animationChannels;
+  ModelAnimationSampler* animationSamplers;
   ModelAnimation* animations;
   ModelBlob* blobs;
   ModelView* views;
@@ -129,6 +158,8 @@ typedef struct {
   ModelNode* nodes;
   ModelSkin* skins;
   int accessorCount;
+  int animationChannelCount;
+  int animationSamplerCount;
   int animationCount;
   int blobCount;
   int viewCount;
@@ -136,7 +167,6 @@ typedef struct {
   int meshCount;
   int nodeCount;
   int skinCount;
-  char* names;
   uint32_t* nodeChildren;
   uint32_t* skinJoints;
 } ModelData;

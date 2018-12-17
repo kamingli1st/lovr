@@ -43,9 +43,8 @@ static int nomValue(const char* data, jsmntok_t* token, int count, int sum) {
   }
 }
 
-// Kinda like sum(map(arr, obj => #obj[key]))
+// Kinda like total += sum(map(arr, obj => #obj[key]))
 static jsmntok_t* aggregate(const char* json, jsmntok_t* token, uint32_t hash, int* total) {
-  *total = 0;
   int size = (token++)->size;
   for (int i = 0; i < size; i++) {
     if (token->size > 0) {
@@ -74,7 +73,21 @@ static void preparse(const char* json, jsmntok_t* tokens, int tokenCount, ModelD
         info->animations = token;
         model->animationCount = token->size;
         info->totalSize += token->size * sizeof(ModelAnimation);
-        token += nomValue(json, token, 1, 0);
+        // Almost like aggregate, but we gotta aggregate 2 keys in a single pass
+        int size = (token++)->size;
+        for (int i = 0; i < size; i++) {
+          if (token->size > 0) {
+            int keyCount = (token++)->size;
+            for (int k = 0; k < keyCount; k++) {
+              switch (NOM_KEY(json, token)) {
+                case HASH16("channels"): model->animationChannelCount += token->size; break;
+                case HASH16("samplers"): model->animationSamplerCount += token->size; break;
+                default: break;
+              }
+              token += nomValue(json, token, 1, 0);
+            }
+          }
+        }
         break;
       case HASH16("buffers"):
         info->blobs = token;
@@ -154,16 +167,84 @@ static void parseAccessors(const char* json, jsmntok_t* token, ModelData* model)
   }
 }
 
+static jsmntok_t* parseAnimationChannel(const char* json, jsmntok_t* token, int index, ModelData* model) {
+  ModelAnimationChannel* channel = &model->animationChannels[index];
+  int keyCount = (token++)->size;
+  for (int k = 0; k < keyCount; k++) {
+    switch (NOM_KEY(json, token)) {
+      case HASH16("sampler"): channel->sampler = NOM_INT(json, token); break;
+      case HASH16("target"): {
+        int targetKeyCount = (token++)->size;
+        for (int tk = 0; tk < targetKeyCount; tk++) {
+          switch (NOM_KEY(json, token)) {
+            case HASH16("node"): channel->nodeIndex = NOM_INT(json, token); break;
+            case HASH16("path"):
+              switch (NOM_KEY(json, token)) {
+                case HASH16("translation"): channel->property = PROP_TRANSLATION; break;
+                case HASH16("rotation"): channel->property = PROP_ROTATION; break;
+                case HASH16("scale"): channel->property = PROP_SCALE; break;
+                default: lovrThrow("Unknown animation target path"); break;
+              }
+              break;
+            default: token += nomValue(json, token, 1, 0); break;
+          }
+        }
+      }
+      default: token += nomValue(json, token, 1, 0); break;
+    }
+  }
+  return token;
+}
+
+static jsmntok_t* parseAnimationSampler(const char* json, jsmntok_t* token, int index, ModelData* model) {
+  ModelAnimationSampler* sampler = &model->animationSamplers[index];
+  int keyCount = (token++)->size;
+  for (int k = 0; k < keyCount; k++) {
+    switch (NOM_KEY(json, token)) {
+      case HASH16("input"): sampler->times = NOM_INT(json, token); break;
+      case HASH16("output"): sampler->values = NOM_INT(json, token); break;
+      case HASH16("interpolation"):
+        switch (NOM_KEY(json, token)) {
+          case HASH16("LINEAR"): sampler->smoothing = SMOOTH_LINEAR; break;
+          case HASH16("STEP"): sampler->smoothing = SMOOTH_STEP; break;
+          case HASH16("CUBICSPLINE"): sampler->smoothing = SMOOTH_CUBIC; break;
+          default: lovrThrow("Unknown animation sampler interpolation"); break;
+        }
+        break;
+      default: token += nomValue(json, token, 1, 0);
+    }
+  }
+  return token;
+}
+
 static void parseAnimations(const char* json, jsmntok_t* token, ModelData* model) {
   if (!token) return;
 
+  int channelIndex = 0;
+  int samplerIndex = 0;
   int count = (token++)->size;
   for (int i = 0; i < count; i++) {
     ModelAnimation* animation = &model->animations[i];
 
     int keyCount = (token++)->size;
     for (int k = 0; k < keyCount; k++) {
-      token += nomValue(json, token, 1, 0);
+      switch (NOM_KEY(json, token)) {
+        case HASH16("channels"):
+          animation->channelCount = token->size;
+          animation->channels = &model->animationChannels[channelIndex];
+          for (int j = 0; j < animation->channelCount; j++) {
+            token = parseAnimationChannel(json, token, channelIndex++, model);
+          }
+          break;
+        case HASH16("samplers"):
+          animation->samplerCount = token->size;
+          animation->samplers = &model->animationSamplers[samplerIndex];
+          for (int j = 0; j < animation->samplerCount; j++) {
+            token = parseAnimationSampler(json, token, samplerIndex++, model);
+          }
+          break;
+        default: token += nomValue(json, token, 1, 0); break;
+      }
     }
   }
 }
@@ -425,6 +506,8 @@ ModelData* lovrModelDataInit(ModelData* model, Blob* blob, ModelDataIO io) {
   model->data = calloc(1, info.totalSize);
   model->binaryBlob = glb ? blob : NULL;
   model->accessors = (ModelAccessor*) (model->data + offset), offset += model->accessorCount * sizeof(ModelAccessor);
+  model->animationChannels = (ModelAnimationChannel*) (model->data + offset), offset += model->animationChannelCount * sizeof(ModelAnimationChannel);
+  model->animationSamplers = (ModelAnimationSampler*) (model->data + offset), offset += model->animationSamplerCount * sizeof(ModelAnimationSampler);
   model->animations = (ModelAnimation*) (model->data + offset), offset += model->animationCount * sizeof(ModelAnimation);
   model->blobs = (ModelBlob*) (model->data + offset), offset += model->blobCount * sizeof(ModelBlob);
   model->views = (ModelView*) (model->data + offset), offset += model->viewCount * sizeof(ModelView);
