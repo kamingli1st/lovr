@@ -311,12 +311,41 @@ static void parseViews(const char* json, jsmntok_t* token, ModelData* model) {
   }
 }
 
-static void parseImages(const char* json, jsmntok_t* token, ModelData* model) {
+static void parseImages(const char* json, jsmntok_t* token, ModelData* model, ModelDataIO io) {
   if (!token) return;
 
   int count = (token++)->size;
   for (int i = 0; i < count; i++) {
-    //
+    TextureData** image = &model->images[i];
+    int keyCount = (token++)->size;
+    for (int k = 0; k < keyCount; k++) {
+      switch (NOM_KEY(json, token)) {
+        case HASH16("bufferView"): {
+          int viewIndex = NOM_INT(json, token);
+          ModelView* view = &model->views[viewIndex];
+          void* data = (uint8_t*) model->blobs[view->blob].data + view->offset;
+          Blob* blob = lovrBlobCreate(data, view->length, NULL);
+          *image = lovrTextureDataCreateFromBlob(blob, true);
+          blob->data = NULL; // FIXME
+          lovrRelease(blob);
+          break;
+        }
+        case HASH16("uri"): {
+          size_t size = 0;
+          char* uri = (char*) json + token->start;
+          size_t length = token->end - token->start;
+          uri[length] = '\0'; // Change the quote into a terminator (I'll be b0k)
+          void* data = io.read(uri, &size);
+          lovrAssert(data && size > 0, "Unable to read image at '%s'", uri);
+          uri[length] = '"';
+          Blob* blob = lovrBlobCreate(data, size, NULL);
+          *image = lovrTextureDataCreateFromBlob(blob, true);
+          lovrRelease(blob);
+          break;
+        }
+        default: token += nomValue(json, token, 1, 0); break;
+      }
+    }
   }
 }
 
@@ -539,7 +568,7 @@ ModelData* lovrModelDataInit(ModelData* model, Blob* blob, ModelDataIO io) {
   parseAnimations(jsonData, info.animations, model);
   parseBlobs(jsonData, info.blobs, model, io, (void*) binData);
   parseViews(jsonData, info.views, model);
-  parseImages(jsonData, info.images, model);
+  parseImages(jsonData, info.images, model, io);
   parseMeshes(jsonData, info.meshes, model);
   parseNodes(jsonData, info.nodes, model);
   parseSkins(jsonData, info.skins, model);
