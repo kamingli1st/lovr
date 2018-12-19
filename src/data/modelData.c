@@ -2,6 +2,7 @@
 #include "lib/math.h"
 #include "lib/jsmn/jsmn.h"
 #include <stdbool.h>
+#include <stdlib.h>
 
 #define MAGIC_glTF 0x46546c67
 #define MAGIC_JSON 0x4e4f534a
@@ -685,8 +686,10 @@ ModelData* lovrModelDataInit(ModelData* model, Blob* blob, ModelDataIO io) {
 
   jsmn_parser parser;
   jsmn_init(&parser);
-  jsmntok_t tokens[1024]; // TODO malloc or token queue
-  int tokenCount = jsmn_parse(&parser, jsonData, jsonLength, tokens, 1024);
+  int tokenCount = jsmn_parse(&parser, jsonData, jsonLength, NULL, 0);
+  jsmntok_t* tokens = malloc(tokenCount * sizeof(jsmntok_t));
+  jsmn_init(&parser);
+  tokenCount = jsmn_parse(&parser, jsonData, jsonLength, tokens, tokenCount);
   lovrAssert(tokenCount >= 0, "Invalid JSON");
   lovrAssert(tokens[0].type == JSMN_OBJECT, "No root object");
 
@@ -724,6 +727,8 @@ ModelData* lovrModelDataInit(ModelData* model, Blob* blob, ModelDataIO io) {
   parseMeshes(jsonData, info.meshes, model);
   parseNodes(jsonData, info.nodes, model);
   parseSkins(jsonData, info.skins, model);
+
+  free(tokens);
 
   return model;
 }
