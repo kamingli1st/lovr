@@ -32,6 +32,17 @@ typedef struct {
   int jointCount;
 } gltfInfo;
 
+typedef struct {
+  uint32_t magic;
+  uint32_t version;
+  uint32_t length;
+} gltfHeader;
+
+typedef struct {
+  uint32_t length;
+  uint32_t type;
+} gltfChunkHeader;
+
 static uint32_t hashKey(char* key) {
   uint32_t hash = 0;
   for (int i = 0; key[i] != '"'; i++) {
