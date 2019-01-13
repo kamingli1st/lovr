@@ -484,7 +484,7 @@ static void lovrGpuBindMesh(Mesh* mesh, Shader* shader, int divisorMultiplier) {
   if (mesh->indexBuffer && mesh->indexCount > 0) {
     lovrGpuBindBuffer(BUFFER_INDEX, mesh->indexBuffer->id, true);
 #ifndef EMSCRIPTEN
-    uint32_t primitiveRestart = (1 << (mesh->indexSize * 8)) - 1;
+    uint32_t primitiveRestart = mesh->indexSize == 4 ? 0xffffffff : 0xffff;
     if (state.primitiveRestart != primitiveRestart) {
       state.primitiveRestart = primitiveRestart;
       glPrimitiveRestartIndex(primitiveRestart);
