@@ -47,6 +47,12 @@ typedef struct {
 } gltfAccessor;
 
 typedef struct {
+  int input;
+  int output;
+  SmoothMode smoothing;
+} gltfAnimationSampler;
+
+typedef struct {
   int buffer;
   int offset;
   int length;
@@ -139,79 +145,31 @@ static jsmntok_t* parseAccessors(const char* json, jsmntok_t* token, gltfAccesso
   return token;
 }
 
-static jsmntok_t* parseAnimationChannel(const char* json, jsmntok_t* token, int index, ModelData* model) {
-  ModelAnimationChannel* channel = &model->animationChannels[index];
-  int keyCount = (token++)->size;
-  for (int k = 0; k < keyCount; k++) {
-    gltfString key = NOM_STR(json, token);
-    if (STR_EQ(key, "sampler")) { channel->sampler = NOM_INT(json, token); }
-    else if (STR_EQ(key, "target")) {
-      int targetKeyCount = (token++)->size;
-      for (int tk = 0; tk < targetKeyCount; tk++) {
-        gltfString targetKey = NOM_STR(json, token);
-        if (STR_EQ(targetKey, "node")) { channel->nodeIndex = NOM_INT(json, token); }
-        else if (STR_EQ(targetKey, "path")) {
-          gltfString property = NOM_STR(json, token);
-          if (STR_EQ(property, "translation")) { channel->property = PROP_TRANSLATION; }
-          else if (STR_EQ(property, "rotation")) { channel->property = PROP_ROTATION; }
-          else if (STR_EQ(property, "scale")) { channel->property = PROP_SCALE; }
-        }
-      }
-    } else {
-      token += NOM_VALUE(json, token);
-    }
-  }
-  return token;
-}
-
-static jsmntok_t* parseAnimationSampler(const char* json, jsmntok_t* token, int index, ModelData* model) {
-  ModelAnimationSampler* sampler = &model->animationSamplers[index];
-  int keyCount = (token++)->size;
-  for (int k = 0; k < keyCount; k++) {
-    gltfString key = NOM_STR(json, token);
-    if (STR_EQ(key, "input")) { sampler->times = NOM_INT(json, token); }
-    else if (STR_EQ(key, "output")) { sampler->values = NOM_INT(json, token); }
-    else if (STR_EQ(key, "interpolation")) {
-      gltfString smoothing = NOM_STR(json, token);
-      if (STR_EQ(smoothing, "LINEAR")) { sampler->smoothing = SMOOTH_LINEAR; }
-      else if (STR_EQ(smoothing, "STEP")) { sampler->smoothing = SMOOTH_STEP; }
-      else if (STR_EQ(smoothing, "CUBICSPLINE")) { sampler->smoothing = SMOOTH_CUBIC; }
-    } else {
-      token += NOM_VALUE(json, token);
-    }
-  }
-  return token;
-}
-
-static void parseAnimations(const char* json, jsmntok_t* token, ModelData* model) {
-  if (!token) return;
-
-  int channelIndex = 0;
-  int samplerIndex = 0;
-  int count = (token++)->size;
-  for (int i = 0; i < count; i++) {
-    ModelAnimation* animation = &model->animations[i];
-
-    int keyCount = (token++)->size;
-    for (int k = 0; k < keyCount; k++) {
+static jsmntok_t* parseAnimationSamplers(const char* json, jsmntok_t* token, gltfAnimationSampler* sampler) {
+  for (int i = (token++)->size; i > 0; i--) {
+    for (int k = (token++)->size; k > 0; k--) {
       gltfString key = NOM_STR(json, token);
-      if (STR_EQ(key, "channels")) {
-        animation->channelCount = (token++)->size;
-        animation->channels = &model->animationChannels[channelIndex];
-        for (int j = 0; j < animation->channelCount; j++) {
-          token = parseAnimationChannel(json, token, channelIndex++, model);
-        }
-      } else if (STR_EQ(key, "samplers")) {
-        animation->samplerCount = (token++)->size;
-        animation->samplers = &model->animationSamplers[samplerIndex];
-        for (int j = 0; j < animation->samplerCount; j++) {
-          token = parseAnimationSampler(json, token, samplerIndex++, model);
+      if (STR_EQ(key, "samplers")) {
+        for (int kk = (token++)->size; kk > 0; kk--, sampler++) {
+          gltfString key = NOM_STR(json, token);
+          if (STR_EQ(key, "input")) { sampler->input = NOM_INT(json, token); }
+          else if (STR_EQ(key, "output")) { sampler->output = NOM_INT(json, token); }
+          else if (STR_EQ(key, "interpolation")) {
+            gltfString smoothing = NOM_STR(json, token);
+            if (STR_EQ(smoothing, "LINEAR")) { sampler->smoothing = SMOOTH_LINEAR; }
+            else if (STR_EQ(smoothing, "STEP")) { sampler->smoothing = SMOOTH_STEP; }
+            else if (STR_EQ(smoothing, "CUBICSPLINE")) { sampler->smoothing = SMOOTH_CUBIC; }
+            else { lovrThrow("Unknown animation sampler interpolation"); }
+          } else {
+            token += NOM_VALUE(json, token);
+          }
         }
       } else {
         token += NOM_VALUE(json, token);
       }
     }
   }
+  return token;
 }
 
 static jsmntok_t* parseBuffers(const char* json, jsmntok_t* token, Blob** blob, ModelDataIO io, const char* basePath, Blob* glb) {
@@ -259,40 +217,6 @@ static jsmntok_t* parseBufferViews(const char* json, jsmntok_t* token, gltfBuffe
     }
   }
   return token;
-}
-
-static void parseImages(const char* json, jsmntok_t* token, ModelData* model, ModelDataIO io, const char* basePath) {
-  if (!token) return;
-
-  int count = (token++)->size;
-  for (int i = 0; i < count; i++) {
-    TextureData** image = &model->images[i];
-    int keyCount = (token++)->size;
-    for (int k = 0; k < keyCount; k++) {
-      gltfString key = NOM_STR(json, token);
-      if (STR_EQ(key, "bufferView")) {
-        /*int viewIndex = NOM_INT(json, token);
-        ModelView* view = &model->views[viewIndex];
-        void* data = (uint8_t*) model->blobs[view->blob].data + view->offset;
-        Blob* blob = lovrBlobCreate(data, view->length, NULL);
-        *image = lovrTextureDataCreateFromBlob(blob, true);
-        blob->data = NULL; // FIXME
-        lovrRelease(blob);*/
-      } else if (STR_EQ(key, "uri")) {
-        size_t size = 0;
-        char filename[1024];
-        int length = token->end - token->start;
-        snprintf(filename, 1024, "%s/%.*s%c", basePath, length, (char*) json + token->start, 0);
-        void* data = io.read(filename, &size);
-        lovrAssert(data && size > 0, "Unable to read image from '%s'", filename);
-        Blob* blob = lovrBlobCreate(data, size, NULL);
-        *image = lovrTextureDataCreateFromBlob(blob, true);
-        lovrRelease(blob);
-      } else {
-        token += NOM_VALUE(json, token);
-      }
-    }
-  }
 }
 
 static jsmntok_t* parseSamplers(const char* json, jsmntok_t* token, gltfSampler* sampler) {
@@ -351,57 +275,6 @@ static jsmntok_t* parseTextureInfo(const char* json, jsmntok_t* token, int* dest
   return token;
 }
 
-static void parseMaterials(const char* json, jsmntok_t* token, ModelData* model) {
-  if (!token) return;
-
-  int count = (token++)->size;
-  for (int i = 0; i < count; i++) {
-    ModelMaterial* material = &model->materials[i];
-    int keyCount = (token++)->size;
-    for (int k = 0; k < keyCount; k++) {
-      gltfString key = NOM_STR(json, token);
-      if (STR_EQ(key, "pbrMetallicRoughness")) {
-        int pbrKeyCount = (token++)->size;
-        for (int j = 0; j < pbrKeyCount; j++) {
-          gltfString pbrKey = NOM_STR(json, token);
-          if (STR_EQ(pbrKey, "baseColorFactor")) {
-            token++; // Enter array
-            material->colors[COLOR_DIFFUSE].r = NOM_FLOAT(json, token);
-            material->colors[COLOR_DIFFUSE].g = NOM_FLOAT(json, token);
-            material->colors[COLOR_DIFFUSE].b = NOM_FLOAT(json, token);
-            material->colors[COLOR_DIFFUSE].a = NOM_FLOAT(json, token);
-          } else if (STR_EQ(pbrKey, "baseColorTexture")) {
-            token = parseTextureInfo(json, token, &material->textures[TEXTURE_DIFFUSE]);
-          } else if (STR_EQ(pbrKey, "metallicFactor")) {
-            material->scalars[SCALAR_METALNESS] = NOM_FLOAT(json, token);
-          } else if (STR_EQ(pbrKey, "roughnessFactor")) {
-            material->scalars[SCALAR_ROUGHNESS] = NOM_FLOAT(json, token);
-          } else if (STR_EQ(pbrKey, "metallicRoughnessTexture")) {
-            token = parseTextureInfo(json, token, &material->textures[TEXTURE_METALNESS]);
-            material->textures[TEXTURE_ROUGHNESS] = material->textures[TEXTURE_METALNESS];
-          } else {
-            token += NOM_VALUE(json, token);
-          }
-        }
-      } else if (STR_EQ(key, "normalTexture")) {
-        token = parseTextureInfo(json, token, &material->textures[TEXTURE_NORMAL]);
-      } else if (STR_EQ(key, "occlusionTexture")) {
-        token = parseTextureInfo(json, token, &material->textures[TEXTURE_OCCLUSION]);
-      } else if (STR_EQ(key, "emissiveTexture")) {
-        token = parseTextureInfo(json, token, &material->textures[TEXTURE_EMISSIVE]);
-      } else if (STR_EQ(key, "emissiveFactor")) {
-        token++; // Enter array
-        material->colors[COLOR_EMISSIVE].r = NOM_FLOAT(json, token);
-        material->colors[COLOR_EMISSIVE].g = NOM_FLOAT(json, token);
-        material->colors[COLOR_EMISSIVE].b = NOM_FLOAT(json, token);
-        material->colors[COLOR_EMISSIVE].a = NOM_FLOAT(json, token);
-      } else {
-        token += NOM_VALUE(json, token);
-      }
-    }
-  }
-}
-
 ModelData* lovrModelDataInit(ModelData* model, Blob* blob, ModelDataIO io) {
   uint8_t* data = blob->data;
   gltfHeader* header = (gltfHeader*) data;
@@ -455,64 +328,75 @@ ModelData* lovrModelDataInit(ModelData* model, Blob* blob, ModelDataIO io) {
     jsmntok_t* meshes;
     jsmntok_t* nodes;
     jsmntok_t* skins;
+    int animationChannelCount;
     int childCount;
     int jointCount;
   } info = { 0 };
 
   gltfAccessor* accessors = NULL;
+  gltfAnimationSampler* animationSamplers = NULL;
   gltfBufferView* bufferViews = NULL;
   gltfMesh* meshes = NULL;
   gltfSampler* samplers = NULL;
 
   for (jsmntok_t* token = tokens + 1; token < tokens + tokenCount;) {
     gltfString key = NOM_STR(json, token);
+
     if (STR_EQ(key, "accessors")) {
       accessors = malloc(token->size * sizeof(gltfAccessor));
       token = parseAccessors(json, token, accessors);
+
     } else if (STR_EQ(key, "animations")){
       info.animations = token;
       model->animationCount = token->size;
       info.totalSize += token->size * sizeof(ModelAnimation);
-      // Almost like aggregate, but we gotta aggregate 2 keys in a single pass
-      int size = (token++)->size;
-      for (int i = 0; i < size; i++) {
-        if (token->size > 0) {
-          int keyCount = (token++)->size;
-          for (int k = 0; k < keyCount; k++) {
-            gltfString animationKey = NOM_STR(json, token);
-            if (STR_EQ(animationKey, "channels")) { model->animationChannelCount += token->size; }
-            else if (STR_EQ(animationKey, "samplers")) { model->animationSamplerCount += token->size; }
-            token += NOM_VALUE(json, token);
+      size_t samplerCount = 0;
+      jsmntok_t* t = token;
+      for (int i = (t++)->size; i > 0; i--) {
+        if (t->size > 0) {
+          for (int k = (t++)->size; k > 0; k--) {
+            gltfString key = NOM_STR(json, t);
+            if (STR_EQ(key, "channels")) { info.animationChannelCount += t->size; }
+            else if (STR_EQ(key, "samplers")) { samplerCount += t->size; }
+            t += NOM_VALUE(json, t);
           }
         }
       }
-      info.totalSize += model->animationChannelCount * sizeof(ModelAnimationChannel);
-      info.totalSize += model->animationSamplerCount * sizeof(ModelAnimationSampler);
+      info.totalSize += info.animationChannelCount * sizeof(ModelAnimationChannel);
+      animationSamplers = malloc(samplerCount * sizeof(gltfAnimationSampler));
+      token = parseAnimationSamplers(json, token, animationSamplers);
+
     } else if (STR_EQ(key, "buffers")) {
       model->blobCount = token->size;
       model->blobs = malloc(model->blobCount * sizeof(Blob*));
       token = parseBuffers(json, token, model->blobs, io, basePath, glb ? blob : NULL);
+
     } else if (STR_EQ(key, "bufferViews")) {
       bufferViews = malloc(token->size * sizeof(gltfBufferView));
       token = parseBufferViews(json, token, bufferViews, glb ? blob : NULL, binOffset);
+
     } else if (STR_EQ(key, "images")) {
       info.images = token;
       model->imageCount = token->size;
       info.totalSize += token->size * sizeof(TextureData*);
       token += NOM_VALUE(json, token);
+
     } else if (STR_EQ(key, "samplers")) {
       samplers = malloc(token->size * sizeof(gltfSampler));
       token = parseSamplers(json, token, samplers);
+
     } else if (STR_EQ(key, "textures")) {
       info.textures = token;
       model->textureCount = token->size;
       info.totalSize += token->size * sizeof(ModelTexture);
       token += NOM_VALUE(json, token);
+
     } else if (STR_EQ(key, "materials")) {
       info.materials = token;
       model->materialCount = token->size;
       info.totalSize += token->size * sizeof(ModelMaterial);
       token += NOM_VALUE(json, token);
+
     } else if (STR_EQ(key, "meshes")) {
       info.meshes = token;
       meshes = malloc(token->size * sizeof(gltfMesh));
@@ -529,18 +413,21 @@ ModelData* lovrModelDataInit(ModelData* model, Blob* blob, ModelDataIO io) {
         }
       }
       info.totalSize += model->primitiveCount * sizeof(ModelPrimitive);
+
     } else if (STR_EQ(key, "nodes")) {
       info.nodes = token;
       model->nodeCount = token->size;
       info.totalSize += token->size * sizeof(ModelNode);
       token = aggregate(json, token, "children", &info.childCount);
       info.totalSize += info.childCount * sizeof(uint32_t);
+
     } else if (STR_EQ(key, "skins")) {
       info.skins = token;
       model->skinCount = token->size;
       info.totalSize += token->size * sizeof(ModelSkin);
       token = aggregate(json, token, "joints", &info.jointCount);
       info.totalSize += info.jointCount * sizeof(uint32_t);
+
     } else {
       token += NOM_VALUE(json, token);
     }
@@ -548,8 +435,6 @@ ModelData* lovrModelDataInit(ModelData* model, Blob* blob, ModelDataIO io) {
 
   size_t offset = 0;
   model->data = calloc(1, info.totalSize);
-  model->animationChannels = (ModelAnimationChannel*) (model->data + offset), offset += model->animationChannelCount * sizeof(ModelAnimationChannel);
-  model->animationSamplers = (ModelAnimationSampler*) (model->data + offset), offset += model->animationSamplerCount * sizeof(ModelAnimationSampler);
   model->animations = (ModelAnimation*) (model->data + offset), offset += model->animationCount * sizeof(ModelAnimation);
   model->images = (TextureData**) (model->data + offset), offset += model->imageCount * sizeof(TextureData*);
   model->textures = (ModelTexture*) (model->data + offset), offset += model->textureCount * sizeof(ModelTexture);
@@ -557,8 +442,100 @@ ModelData* lovrModelDataInit(ModelData* model, Blob* blob, ModelDataIO io) {
   model->nodes = (ModelNode*) (model->data + offset), offset += model->nodeCount * sizeof(ModelNode);
   model->skins = (ModelSkin*) (model->data + offset), offset += model->skinCount * sizeof(ModelSkin);
 
+  ModelAnimationChannel* channels = (ModelAnimationChannel*) (model->data + offset); offset += info.animationChannelCount * sizeof(ModelAnimationChannel);
   uint32_t* nodeChildren = (uint32_t*) (model->data + offset); offset += info.childCount * sizeof(uint32_t);
   uint32_t* skinJoints = (uint32_t*) (model->data + offset); offset += info.jointCount * sizeof(uint32_t);
+
+  // Animations
+  if (info.animations) {
+    int channelIndex = 0;
+    int baseSampler = 0;
+    jsmntok_t* token = info.animations;
+    ModelAnimation* animation = model->animations;
+    for (int i = (token++)->size; i > 0; i--, animation++) {
+      int samplerCount = 0;
+      for (int k = (token++)->size; k > 0; k--) {
+        gltfString key = NOM_STR(json, token);
+        if (STR_EQ(key, "channels")) {
+          animation->channelCount = (token++)->size;
+          animation->channels = channels + channelIndex;
+          for (int j = 0; j < animation->channelCount; j++) {
+            ModelAnimationChannel* channel = &channels[channelIndex++];
+            for (int kk = (token++)->size; kk > 0; kk--) {
+              gltfString key = NOM_STR(json, token);
+              if (STR_EQ(key, "sampler")) {
+                gltfAnimationSampler* sampler = animationSamplers + baseSampler + NOM_INT(json, token);
+                gltfAccessor* input = &accessors[sampler->input];
+                gltfAccessor* output = &accessors[sampler->output];
+                gltfBufferView* inputView = &bufferViews[input->view];
+                uint8_t* inputData = model->blobs[inputView->buffer]->data;
+                channel->keyframeCount = input->count;
+                channel->smoothing = sampler->smoothing;
+                channel->times = (float*) (inputData + inputView->offset + input->offset);
+                accessorToAttribute(output, &channel->data);
+                animation->duration = MAX(channel->times[input->count - 1], animation->duration);
+              } else if (STR_EQ(key, "target")) {
+                for (int kkk = (token++)->size; kkk > 0; kkk--) {
+                  gltfString key = NOM_STR(json, token);
+                  if (STR_EQ(key, "node")) { channel->nodeIndex = NOM_INT(json, token); }
+                  else if (STR_EQ(key, "path")) {
+                    gltfString property = NOM_STR(json, token);
+                    if (STR_EQ(property, "translation")) { channel->property = PROP_TRANSLATION; }
+                    else if (STR_EQ(property, "rotation")) { channel->property = PROP_ROTATION; }
+                    else if (STR_EQ(property, "scale")) { channel->property = PROP_SCALE; }
+                    else { lovrThrow("Unknown animation channel property"); }
+                  } else {
+                    token += NOM_VALUE(json, token);
+                  }
+                }
+              } else {
+                token += NOM_VALUE(json, token);
+              }
+            }
+          }
+        } else if (STR_EQ(key, "samplers")) {
+          samplerCount += token->size;
+          token += NOM_VALUE(json, token);
+        } else {
+          token += NOM_VALUE(json, token);
+        }
+      }
+      baseSampler += samplerCount;
+    }
+  }
+
+  // Images
+  if (info.images) {
+    jsmntok_t* token = info.images;
+    TextureData** image = model->images;
+    for (int i = (token++)->size; i > 0; i--, image++) {
+      TextureData** image = &model->images[i];
+      for (int k = (token++)->size; k > 0; k--) {
+        gltfString key = NOM_STR(json, token);
+        if (STR_EQ(key, "bufferView")) {
+          /*int viewIndex = NOM_INT(json, token);
+          ModelView* view = &model->views[viewIndex];
+          void* data = (uint8_t*) model->blobs[view->blob].data + view->offset;
+          Blob* blob = lovrBlobCreate(data, view->length, NULL);
+          *image = lovrTextureDataCreateFromBlob(blob, true);
+          blob->data = NULL; // FIXME
+          lovrRelease(blob);*/
+        } else if (STR_EQ(key, "uri")) {
+          size_t size = 0;
+          char filename[1024];
+          int length = token->end - token->start;
+          snprintf(filename, 1024, "%s/%.*s%c", basePath, length, (char*) json + token->start, 0);
+          void* data = io.read(filename, &size);
+          lovrAssert(data && size > 0, "Unable to read image from '%s'", filename);
+          Blob* blob = lovrBlobCreate(data, size, NULL);
+          *image = lovrTextureDataCreateFromBlob(blob, true);
+          lovrRelease(blob);
+        } else {
+          token += NOM_VALUE(json, token);
+        }
+      }
+    }
+  }
 
   // Textures
   if (info.textures) {
@@ -579,9 +556,54 @@ ModelData* lovrModelDataInit(ModelData* model, Blob* blob, ModelDataIO io) {
     }
   }
 
-  parseAnimations(json, info.animations, model);
-  parseImages(json, info.images, model, io, basePath);
-  parseMaterials(json, info.materials, model);
+  // Materials
+  if (info.materials) {
+    jsmntok_t* token = info.materials;
+    ModelMaterial* material = model->materials;
+    for (int i = (token++)->size; i > 0; i--) {
+      for (int k = (token++)->size; k > 0; k--) {
+        gltfString key = NOM_STR(json, token);
+        if (STR_EQ(key, "pbrMetallicRoughness")) {
+          int pbrKeyCount = (token++)->size;
+          for (int j = 0; j < pbrKeyCount; j++) {
+            gltfString pbrKey = NOM_STR(json, token);
+            if (STR_EQ(pbrKey, "baseColorFactor")) {
+              token++; // Enter array
+              material->colors[COLOR_DIFFUSE].r = NOM_FLOAT(json, token);
+              material->colors[COLOR_DIFFUSE].g = NOM_FLOAT(json, token);
+              material->colors[COLOR_DIFFUSE].b = NOM_FLOAT(json, token);
+              material->colors[COLOR_DIFFUSE].a = NOM_FLOAT(json, token);
+            } else if (STR_EQ(pbrKey, "baseColorTexture")) {
+              token = parseTextureInfo(json, token, &material->textures[TEXTURE_DIFFUSE]);
+            } else if (STR_EQ(pbrKey, "metallicFactor")) {
+              material->scalars[SCALAR_METALNESS] = NOM_FLOAT(json, token);
+            } else if (STR_EQ(pbrKey, "roughnessFactor")) {
+              material->scalars[SCALAR_ROUGHNESS] = NOM_FLOAT(json, token);
+            } else if (STR_EQ(pbrKey, "metallicRoughnessTexture")) {
+              token = parseTextureInfo(json, token, &material->textures[TEXTURE_METALNESS]);
+              material->textures[TEXTURE_ROUGHNESS] = material->textures[TEXTURE_METALNESS];
+            } else {
+              token += NOM_VALUE(json, token);
+            }
+          }
+        } else if (STR_EQ(key, "normalTexture")) {
+          token = parseTextureInfo(json, token, &material->textures[TEXTURE_NORMAL]);
+        } else if (STR_EQ(key, "occlusionTexture")) {
+          token = parseTextureInfo(json, token, &material->textures[TEXTURE_OCCLUSION]);
+        } else if (STR_EQ(key, "emissiveTexture")) {
+          token = parseTextureInfo(json, token, &material->textures[TEXTURE_EMISSIVE]);
+        } else if (STR_EQ(key, "emissiveFactor")) {
+          token++; // Enter array
+          material->colors[COLOR_EMISSIVE].r = NOM_FLOAT(json, token);
+          material->colors[COLOR_EMISSIVE].g = NOM_FLOAT(json, token);
+          material->colors[COLOR_EMISSIVE].b = NOM_FLOAT(json, token);
+          material->colors[COLOR_EMISSIVE].a = NOM_FLOAT(json, token);
+        } else {
+          token += NOM_VALUE(json, token);
+        }
+      }
+    }
+  }
 
   // Primitives
   if (info.meshes) {
@@ -625,7 +647,6 @@ ModelData* lovrModelDataInit(ModelData* model, Blob* blob, ModelDataIO io) {
                   else if (STR_EQ(name, "TANGENT")) { attribute = ATTR_TANGENT; }
                   else if (STR_EQ(name, "JOINTS_0")) { attribute = ATTR_BONES; }
                   else if (STR_EQ(name, "WEIGHTS_0")) { attribute = ATTR_WEIGHTS; }
-
                   if (attribute >= 0) {
                     accessorToAttribute(accessor, &primitive->attributes[attribute]);
                   }
@@ -736,6 +757,7 @@ ModelData* lovrModelDataInit(ModelData* model, Blob* blob, ModelDataIO io) {
   }
 
   free(accessors);
+  free(animationSamplers);
   free(bufferViews);
   free(meshes);
   free(tokens);

@@ -19,20 +19,10 @@ Animator* lovrAnimatorInit(Animator* animator, ModelData* modelData) {
       .time = 0.f,
       .speed = 1.f,
       .alpha = 1.f,
-      .duration = 0.f,
       .priority = 0,
       .playing = false,
       .looping = false
     };
-
-    ModelAnimation* animation = &modelData->animations[i];
-    for (int j = 0; j < animation->samplerCount; j++) {
-      ModelAnimationSampler* sampler = &modelData->animationSamplers[j];
-      ModelAccessor* times = &modelData->accessors[sampler->times];
-      if (times->hasMax) {
-        track.duration = MAX(track.duration, times->max[0]);
-      }
-    }
 
     vec_push(&animator->tracks, track);
   }
@@ -62,10 +52,11 @@ void lovrAnimatorUpdate(Animator* animator, float dt) {
   vec_foreach_ptr(&animator->tracks, track, i) {
     if (track->playing) {
       track->time += dt * track->speed * animator->speed;
+      float duration = animator->modelData->animations[i].duration;
 
       if (track->looping) {
-        track->time = fmodf(track->time, track->duration);
-      } else if (track->time > track->duration || track->time < 0) {
+        track->time = fmodf(track->time, duration);
+      } else if (track->time > duration || track->time < 0) {
         track->time = 0;
         track->playing = false;
       }
@@ -89,48 +80,35 @@ bool lovrAnimatorEvaluate(Animator* animator, int nodeIndex, mat4 transform) {
         continue;
       }
 
-      float time = fmodf(track->time, track->duration);
-      ModelAnimationSampler* sampler = &modelData->animationSamplers[channel->sampler];
-      ModelAccessor* timeAccessor = &modelData->accessors[sampler->times];
-      ModelAccessor* valueAccessor = &modelData->accessors[sampler->values];
-      ModelView* timeView = &modelData->views[timeAccessor->view];
-      ModelView* valueView = &modelData->views[valueAccessor->view];
-      uint8_t* times = (uint8_t*) modelData->blobs[timeView->blob].data + timeView->offset + timeAccessor->offset;
-      uint8_t* values = (uint8_t*) modelData->blobs[valueView->blob].data + valueView->offset + valueAccessor->offset;
-      size_t timeStride = timeView->stride ? timeView->stride : sizeof(float);
-      size_t valueStride = valueView->stride ? valueView->stride : (sizeof(float) * valueAccessor->components);
+      float duration = animator->modelData->animations[i].duration;
+      float time = fmodf(track->time, duration);
+      float* times = channel->times;
+      ModelAttribute* values = &channel->data;
 
       int k = 0;
-      while (k < timeAccessor->count) {
-        float timestamp = *(float*) (times + timeStride * k);
-        if (timestamp >= time) {
-          break;
-        } else {
-          k++;
-        }
+      while (k < channel->keyframeCount && times[k] < time) {
+        k++;
       }
 
       float z = 0.f;
       float value[4];
       float next[4];
-      if (k > 0 && k < timeAccessor->count - 1) {
-        float t1 = *(float*) (times + timeStride * (k - 1));
-        float t2 = *(float*) (times + timeStride * k);
-        z = (time - t1) / (t2 - t1);
+      if (k > 0 && k < channel->keyframeCount - 1) {
+        z = (time - times[k - 1]) / (times[k] - times[k - 1]);
       }
 
       switch (channel->property) {
         case PROP_TRANSLATION:
         case PROP_SCALE:
           if (k == 0) {
-            vec3_init(value, (float*) values);
-          } else if (k >= timeAccessor->count) {
-            vec3_init(value, (float*) ((uint8_t*) values + valueStride * (valueAccessor->count - 1)));
+            vec3_init(value, (float*) values->data);
+          } else if (k >= channel->keyframeCount) {
+            vec3_init(value, (float*) values->data + (channel->keyframeCount - 1));
           } else {
-            vec3_init(value, (float*) ((uint8_t*) values + valueStride * (k - 1)));
-            vec3_init(next, (float*) ((uint8_t*) values + valueStride * k));
+            vec3_init(value, (float*) values->data + (k - 1));
+            vec3_init(next, (float*) values->data + k);
 
-            switch (sampler->smoothing) {
+            switch (channel->smoothing) {
               case SMOOTH_STEP:
                 if (z >= .5) {
                   vec3_init(value, next);
@@ -149,14 +127,14 @@ bool lovrAnimatorEvaluate(Animator* animator, int nodeIndex, mat4 transform) {
 
         case PROP_ROTATION:
           if (k == 0) {
-            quat_init(value, (float*) values);
-          } else if (k >= timeAccessor->count) {
-            quat_init(value, (float*) ((uint8_t*) values + valueStride * (valueAccessor->count - 1)));
+            quat_init(value, (float*) values->data);
+          } else if (k >= channel->keyframeCount) {
+            quat_init(value, (float*) values->data + (channel->keyframeCount - 1));
           } else {
-            quat_init(value, (float*) ((uint8_t*) values + valueStride * (k - 1)));
-            quat_init(next, (float*) ((uint8_t*) values + valueStride * k));
+            quat_init(value, (float*) values->data + (k - 1));
+            quat_init(next, (float*) values->data + k);
 
-            switch (sampler->smoothing) {
+            switch (channel->smoothing) {
               case SMOOTH_STEP:
                 if (z >= .5) {
                   quat_init(value, next);
@@ -218,20 +196,20 @@ void lovrAnimatorResume(Animator* animator, int animation) {
 
 void lovrAnimatorSeek(Animator* animator, int animation, float time) {
   Track* track = &animator->tracks.data[animation];
-  float duration = track->duration;
+  float duration = animator->modelData->animations[animation].duration;
 
-  while (time > track->duration) {
-    time -= track->duration;
+  while (time > duration) {
+    time -= duration;
   }
 
   while (time < 0) {
-    time += track->duration;
+    time += duration;
   }
 
   track->time = time;
 
   if (!track->looping) {
-    track->time = MIN(track->time, track->duration);
+    track->time = MIN(track->time, duration);
     track->time = MAX(track->time, 0);
   }
 }
@@ -253,7 +231,7 @@ void lovrAnimatorSetAlpha(Animator* animator, int animation, float alpha) {
 
 float lovrAnimatorGetDuration(Animator* animator, int animation) {
   Track* track = &animator->tracks.data[animation];
-  return track->duration;
+  return animator->modelData->animations[animation].duration;
 }
 
 bool lovrAnimatorIsPlaying(Animator* animator, int animation) {

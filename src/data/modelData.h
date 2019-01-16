@@ -91,25 +91,6 @@ typedef enum {
 typedef enum { I8, U8, I16, U16, I32, U32, F32 } AttributeType;
 
 typedef struct {
-  int nodeIndex;
-  AnimationProperty property;
-  int sampler;
-} ModelAnimationChannel;
-
-typedef struct {
-  int times;
-  int values;
-  SmoothMode smoothing;
-} ModelAnimationSampler;
-
-typedef struct {
-  ModelAnimationChannel* channels;
-  ModelAnimationSampler* samplers;
-  int channelCount;
-  int samplerCount;
-} ModelAnimation;
-
-typedef struct {
   void* data;
   size_t stride;
   int count;
@@ -117,6 +98,21 @@ typedef struct {
   unsigned int components : 3;
   bool normalized : 1;
 } ModelAttribute;
+
+typedef struct {
+  int nodeIndex;
+  AnimationProperty property;
+  SmoothMode smoothing;
+  int keyframeCount;
+  float* times;
+  ModelAttribute data;
+} ModelAnimationChannel;
+
+typedef struct {
+  ModelAnimationChannel* channels;
+  int channelCount;
+  float duration;
+} ModelAnimation;
 
 typedef struct {
   int textureDataIndex;
@@ -158,8 +154,6 @@ typedef struct {
 typedef struct {
   Ref ref;
   uint8_t* data;
-  ModelAnimationChannel* animationChannels;
-  ModelAnimationSampler* animationSamplers;
   ModelAnimation* animations;
   Blob** blobs;
   TextureData** images;
@@ -168,8 +162,6 @@ typedef struct {
   ModelPrimitive* primitives;
   ModelNode* nodes;
   ModelSkin* skins;
-  int animationChannelCount;
-  int animationSamplerCount;
   int animationCount;
   int blobCount;
   int imageCount;

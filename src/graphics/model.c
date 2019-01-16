@@ -21,9 +21,7 @@ static void renderNode(Model* model, uint32_t nodeIndex, int instances) {
   ModelNode* node = &model->data->nodes[nodeIndex];
   mat4 globalTransform = model->globalNodeTransforms + 16 * nodeIndex;
 
-  if (node->mesh >= 0) {
-    ModelMesh* modelMesh = &model->data->meshes[node->mesh];
-
+  if (node->primitiveCount > 0) {
     float pose[16 * MAX_BONES];
     if (node->skin >= 0 && model->animator) {
       ModelSkin* skin = &model->data->skins[node->skin];
@@ -40,10 +38,9 @@ static void renderNode(Model* model, uint32_t nodeIndex, int instances) {
       }
     }
 
-    for (uint32_t i = 0; i < modelMesh->primitiveCount; i++) {
-      uint32_t primitiveIndex = modelMesh->firstPrimitive + i;
-      ModelPrimitive* primitive = &model->data->primitives[primitiveIndex];
-      Mesh* mesh = model->meshes[primitiveIndex];
+    for (uint32_t i = 0; i < node->primitiveCount; i++) {
+      ModelPrimitive* primitive = &model->data->primitives[node->primitiveIndex + i];
+      Mesh* mesh = model->meshes[node->primitiveIndex + i];
 
       uint32_t rangeStart, rangeCount;
       lovrMeshGetDrawRange(mesh, &rangeStart, &rangeCount);
