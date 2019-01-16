@@ -30,12 +30,9 @@ static void renderNode(Model* model, uint32_t nodeIndex, int instances) {
 
       for (uint32_t j = 0; j < skin->jointCount; j++) {
         mat4 globalJointTransform = model->globalNodeTransforms + 16 * skin->joints[j];
-
-        ModelAccessor* inverseBindMatrices = &model->data->accessors[skin->inverseBindMatrices];
-        ModelView* view = &model->data->views[inverseBindMatrices->view];
-        mat4 inverseBindMatrix = (float*) ((uint8_t*) model->data->blobs[view->blob].data + view->offset + inverseBindMatrices->offset + 16 * j * sizeof(float));
-
+        mat4 inverseBindMatrix = skin->inverseBindMatrices + 16 * j;
         mat4 jointPose = pose + 16 * j;
+
         mat4_set(jointPose, globalTransform);
         mat4_invert(jointPose);
         mat4_multiply(jointPose, globalJointTransform);
