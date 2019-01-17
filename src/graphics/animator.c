@@ -99,7 +99,7 @@ bool lovrAnimatorEvaluate(Animator* animator, int nodeIndex, mat4 transform) {
       float z = 0.f;
       float value[4];
       float next[4];
-      if (k > 0 && k < channel->keyframeCount - 1) {
+      if (k > 0 && k <= channel->keyframeCount - 1) {
         float t1 = *evaluateAttribute(animator, times, k - 1);
         float t2 = *evaluateAttribute(animator, times, k);
         z = (time - t1) / (t2 - t1);
