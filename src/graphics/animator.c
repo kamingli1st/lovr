@@ -64,6 +64,12 @@ void lovrAnimatorUpdate(Animator* animator, float dt) {
   }
 }
 
+static float* evaluateAttribute(Animator* animator, ModelAttribute* attribute, int index) {
+  ModelBuffer* buffer = &animator->modelData->buffers[attribute->buffer];
+  size_t stride = buffer->stride ? buffer->stride : (attribute->components * sizeof(float)); // TODO
+  return (float*) (buffer->data + index * stride + attribute->offset);
+}
+
 bool lovrAnimatorEvaluate(Animator* animator, int nodeIndex, mat4 transform) {
   ModelData* modelData = animator->modelData;
   float properties[3][4] = { { 0, 0, 0 }, { 0, 0, 0, 1 }, { 1, 1, 1 } };
@@ -82,11 +88,11 @@ bool lovrAnimatorEvaluate(Animator* animator, int nodeIndex, mat4 transform) {
 
       float duration = animator->modelData->animations[i].duration;
       float time = fmodf(track->time, duration);
-      float* times = channel->times;
-      ModelAttribute* values = &channel->data;
+      ModelAttribute* times = channel->times;
+      ModelAttribute* data = channel->data;
 
       int k = 0;
-      while (k < channel->keyframeCount && times[k] < time) {
+      while (k < channel->keyframeCount && *evaluateAttribute(animator, times, k) < time) {
         k++;
       }
 
@@ -94,19 +100,21 @@ bool lovrAnimatorEvaluate(Animator* animator, int nodeIndex, mat4 transform) {
       float value[4];
       float next[4];
       if (k > 0 && k < channel->keyframeCount - 1) {
-        z = (time - times[k - 1]) / (times[k] - times[k - 1]);
+        float t1 = *evaluateAttribute(animator, times, k - 1);
+        float t2 = *evaluateAttribute(animator, times, k);
+        z = (time - t1) / (t2 - t1);
       }
 
       switch (channel->property) {
         case PROP_TRANSLATION:
         case PROP_SCALE:
           if (k == 0) {
-            vec3_init(value, (float*) values->data);
+            vec3_init(value, evaluateAttribute(animator, data, 0));
           } else if (k >= channel->keyframeCount) {
-            vec3_init(value, (float*) values->data + (channel->keyframeCount - 1));
+            vec3_init(value, evaluateAttribute(animator, data, channel->keyframeCount - 1));
           } else {
-            vec3_init(value, (float*) values->data + (k - 1));
-            vec3_init(next, (float*) values->data + k);
+            vec3_init(value, evaluateAttribute(animator, data, k - 1));
+            vec3_init(next, evaluateAttribute(animator, data, k));
 
             switch (channel->smoothing) {
               case SMOOTH_STEP:
@@ -127,12 +135,12 @@ bool lovrAnimatorEvaluate(Animator* animator, int nodeIndex, mat4 transform) {
 
         case PROP_ROTATION:
           if (k == 0) {
-            quat_init(value, (float*) values->data);
+            quat_init(value, evaluateAttribute(animator, data, 0));
           } else if (k >= channel->keyframeCount) {
-            quat_init(value, (float*) values->data + (channel->keyframeCount - 1));
+            quat_init(value, evaluateAttribute(animator, data, channel->keyframeCount - 1));
           } else {
-            quat_init(value, (float*) values->data + (k - 1));
-            quat_init(next, (float*) values->data + k);
+            quat_init(value, evaluateAttribute(animator, data, k - 1));
+            quat_init(next, evaluateAttribute(animator, data, k));
 
             switch (channel->smoothing) {
               case SMOOTH_STEP:

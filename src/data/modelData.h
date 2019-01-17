@@ -91,12 +91,23 @@ typedef enum {
 typedef enum { I8, U8, I16, U16, I32, U32, F32 } AttributeType;
 
 typedef struct {
-  void* data;
+  char* data;
+  size_t size;
   size_t stride;
-  int count;
+} ModelBuffer;
+
+typedef struct {
+  uint32_t buffer;
+  size_t offset;
+  uint32_t count;
   AttributeType type;
   unsigned int components : 3;
   bool normalized : 1;
+  bool matrix : 1;
+  bool hasMin : 1;
+  bool hasMax : 1;
+  float min[4];
+  float max[4];
 } ModelAttribute;
 
 typedef struct {
@@ -104,8 +115,8 @@ typedef struct {
   AnimationProperty property;
   SmoothMode smoothing;
   int keyframeCount;
-  float* times;
-  ModelAttribute data;
+  ModelAttribute* times;
+  ModelAttribute* data;
 } ModelAnimationChannel;
 
 typedef struct {
@@ -115,7 +126,7 @@ typedef struct {
 } ModelAnimation;
 
 typedef struct {
-  int textureDataIndex;
+  int imageIndex;
   TextureFilter filter;
   TextureWrap wrap;
   bool mipmaps;
@@ -129,8 +140,8 @@ typedef struct {
 
 typedef struct {
   DrawMode mode;
-  ModelAttribute attributes[MAX_DEFAULT_ATTRIBUTES];
-  ModelAttribute indices;
+  ModelAttribute* attributes[MAX_DEFAULT_ATTRIBUTES];
+  ModelAttribute* indices;
   int material;
 } ModelPrimitive;
 
@@ -154,17 +165,21 @@ typedef struct {
 typedef struct {
   Ref ref;
   uint8_t* data;
-  ModelAnimation* animations;
   Blob** blobs;
   TextureData** images;
+  ModelAnimation* animations;
+  ModelAttribute* attributes;
+  ModelBuffer* buffers;
   ModelTexture* textures;
   ModelMaterial* materials;
   ModelPrimitive* primitives;
   ModelNode* nodes;
   ModelSkin* skins;
-  int animationCount;
   int blobCount;
   int imageCount;
+  int animationCount;
+  int attributeCount;
+  int bufferCount;
   int textureCount;
   int materialCount;
   int primitiveCount;
