@@ -762,7 +762,6 @@ ModelData* lovrModelDataInit(ModelData* model, Blob* source, ModelDataIO io) {
     jsmntok_t* token = info.skins;
     ModelSkin* skin = model->skins;
     for (int i = (token++)->size; i > 0; i--, skin++) {
-      int keyCount = (token++)->size;
       for (int k = (token++)->size; k > 0; k--) {
         gltfString key = NOM_STR(json, token);
         if (STR_EQ(key, "inverseBindMatrices")) {
