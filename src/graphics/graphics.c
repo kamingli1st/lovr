@@ -265,6 +265,10 @@ void lovrGraphicsReset() {
   lovrGraphicsOrigin();
 }
 
+Pipeline lovrGraphicsGetPipeline() {
+  return state.pipeline;
+};
+
 bool lovrGraphicsGetAlphaSampling() {
   return state.pipeline.alphaSampling;
 }

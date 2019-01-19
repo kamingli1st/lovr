@@ -207,6 +207,7 @@ Buffer* lovrGraphicsGetIdentityBuffer();
 
 // State
 void lovrGraphicsReset();
+Pipeline lovrGraphicsGetPipeline();
 bool lovrGraphicsGetAlphaSampling();
 void lovrGraphicsSetAlphaSampling(bool sample);
 Color lovrGraphicsGetBackgroundColor();

@@ -35,6 +35,8 @@ typedef struct {
   RenderModel_t* deviceModels[16];
   RenderModel_TextureMap_t* deviceTextures[16];
   Canvas* canvas;
+  Mesh* viewMask;
+  uint32_t viewMaskVertexCount;
   vec_float_t boundsGeometry;
   vec_controller_t controllers;
   HeadsetType type;
@@ -531,6 +533,28 @@ static void openvrRenderTo(void (*callback)(void*), void* userdata) {
     lovrTextureAllocate(texture, width * 2, height, 1, FORMAT_RGBA);
     lovrCanvasSetAttachments(state.canvas, &(Attachment) { texture, 0, 0 }, 1);
     lovrRelease(texture);
+
+    HiddenAreaMesh_t mesh = state.system->GetHiddenAreaMesh(EYE_LEFT, EHiddenAreaMeshType_k_eHiddenAreaMesh_Standard);
+    size_t bufferSize = mesh.unTriangleCount * 3 * sizeof(HmdVector2_t);
+    Buffer* buffer = lovrBufferCreate(bufferSize, mesh.pVertexData, BUFFER_VERTEX, USAGE_STATIC, false);
+    state.viewMask = lovrMeshCreateEmpty(DRAW_TRIANGLES);
+    state.viewMaskVertexCount = mesh.unTriangleCount * 3;
+    lovrMeshAttachAttribute(state.viewMask, "lovrPosition", &(MeshAttribute) {
+      .buffer = buffer,
+      .stride = sizeof(HmdVector2_t),
+      .type = F32,
+      .components = 2,
+      .enabled = true
+    });
+    lovrMeshAttachAttribute(state.viewMask, "lovrDrawID", &(MeshAttribute) {
+      .buffer = lovrGraphicsGetIdentityBuffer(),
+      .type = U8,
+      .components = 1,
+      .divisor = 1,
+      .integer = true,
+      .enabled = true
+    });
+    lovrRelease(buffer);
   }
 
   Camera camera = { .canvas = state.canvas, .viewMatrix = { MAT4_IDENTITY, MAT4_IDENTITY } };
@@ -547,6 +571,22 @@ static void openvrRenderTo(void (*callback)(void*), void* userdata) {
   }
 
   lovrGraphicsSetCamera(&camera, true);
+
+  Pipeline pipeline = lovrGraphicsGetPipeline();
+  pipeline.culling = false;
+  lovrGraphicsBatch(&(BatchRequest) {
+    .type = BATCH_MESH,
+    .params.mesh = {
+      .object = state.viewMask,
+      .mode = DRAW_TRIANGLES,
+      .rangeStart = 0,
+      .rangeCount = state.viewMaskVertexCount,
+      .instances = 1
+    },
+    .shader = SHADER_FILL,
+    .pipeline = &pipeline
+  });
+
   callback(userdata);
   lovrGraphicsSetCamera(NULL, false);
 
