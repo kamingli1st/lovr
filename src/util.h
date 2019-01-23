@@ -48,6 +48,7 @@ typedef void (*lovrErrorHandler)(void* userdata, const char* format, va_list arg
 extern _Thread_local lovrErrorHandler lovrErrorCallback;
 extern _Thread_local void* lovrErrorUserdata;
 
+uint32_t hash(const char* string);
 void lovrSetErrorCallback(lovrErrorHandler callback, void* context);
 void _Noreturn lovrThrow(const char* format, ...);
 void* _lovrAlloc(const char* type, size_t size, void (*destructor)(void*));

@@ -9,3 +9,4 @@ Tuprules.tup
 /watch.sh
 .DS_Store
 bin
+hasher

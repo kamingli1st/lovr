@@ -49,6 +49,14 @@ void lovrRelease(void* object) {
   }
 }
 
+uint32_t hash(const char* string) {
+  uint32_t hash = 0;
+  while (*string) {
+    hash = (hash * 65599) + *string++;
+  }
+  return hash;
+}
+
 // https://github.com/starwing/luautf8
 size_t utf8_decode(const char *s, const char *e, unsigned *pch) {
   unsigned ch;
