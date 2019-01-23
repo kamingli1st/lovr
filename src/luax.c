@@ -2,6 +2,7 @@
 #include "platform.h"
 #include "util.h"
 #include "lib/sds/sds.h"
+#include "lib/stb/stb_sprintf.h"
 #include <stdlib.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -96,7 +97,9 @@ void luax_registerloader(lua_State* L, lua_CFunction loader, int index) {
 void luax_registertype(lua_State* L, const char* name, const luaL_Reg* functions) {
 
   // Push metatable
-  luaL_newmetatable(L, name);
+  char metaname[16] = { 0 };
+  stb_sprintf(metaname, "%u", hash(name));
+  luaL_newmetatable(L, metaname);
   lua_getmetatable(L, -1);
 
   // m.__index = m
@@ -138,31 +141,31 @@ void luax_extendtype(lua_State* L, const char* base, const char* name, const lua
   lua_pop(L, 1);
 }
 
-void* _luax_totype(lua_State* L, int index, const char* type) {
+void* _luax_totype(lua_State* L, int index, uint32_t type) {
   void** p = lua_touserdata(L, index);
 
   if (p) {
     Ref* object = *(Ref**) p;
-    if (!strcmp(object->type, type)) {
+    if (object->type == type) {
       return object;
     }
 
     if (lua_getmetatable(L, index)) {
       lua_getfield(L, -1, "super");
-      const char* super = lua_tostring(L, -1);
+      uint32_t super = (uint32_t) lua_tointeger(L, -1);
       lua_pop(L, 2);
-      return (!super || strcmp(super, type)) ? NULL : object;
+      return (super == type) ? object : NULL;
     }
   }
 
   return NULL;
 }
 
-void* _luax_checktype(lua_State* L, int index, const char* type) {
+void* _luax_checktype(lua_State* L, int index, uint32_t type, const char* debug) {
   void* object = _luax_totype(L, index, type);
 
   if (!object) {
-    luaL_typerror(L, index, type);
+    luaL_typerror(L, index, debug);
   }
 
   return object;
@@ -209,7 +212,9 @@ void luax_pushobject(lua_State* L, void* object) {
 
   // Allocate userdata
   void** u = (void**) lua_newuserdata(L, sizeof(void**));
-  luaL_getmetatable(L, ((Ref*) object)->type);
+  char name[16] = { 0 };
+  stb_sprintf(name, "%u", ((Ref*) object)->type);
+  luaL_getmetatable(L, name);
   lua_setmetatable(L, -2);
   lovrRetain(object);
   *u = object;

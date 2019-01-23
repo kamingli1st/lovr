@@ -2,7 +2,20 @@
 #include "../util.h"
 
 const char* strings[] = {
-  "test",
+  "Blob",
+  "BoxShape",
+  "CapsuleShape",
+  "Collider",
+  "Curve",
+  "CylinderShape",
+  "ModelData",
+  "Pool",
+  "Shape",
+  "SoundData",
+  "SphereShape",
+  "TextureData",
+  "VertexData",
+  "World",
   NULL
 };
 
