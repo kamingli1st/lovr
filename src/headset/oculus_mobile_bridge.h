@@ -88,6 +88,7 @@ void bridgeLovrUpdate(BridgeLovrUpdateData *updateData);
 typedef struct {
   int eye;
   int framebuffer;
+  bool multiview;
 } BridgeLovrDrawData;
 
 void bridgeLovrDraw(BridgeLovrDrawData *drawData);

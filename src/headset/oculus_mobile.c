@@ -402,17 +402,27 @@ void bridgeLovrUpdate(BridgeLovrUpdateData *updateData) {
   }
 }
 
-static void lovrOculusMobileDraw(int framebuffer, int width, int height, float *eyeViewMatrix, float *projectionMatrix) {
+static void lovrOculusMobileDraw(int framebuffer, bool multiview, int width, int height, float *eyeViewMatrix, float *projectionMatrix) {
   lovrGpuDirtyTexture();
 
   Canvas canvas = { 0 };
-  lovrCanvasInitFromHandle(&canvas, width, height, (CanvasFlags) { 0 }, framebuffer, 0, 0, 1, true);
+  CanvasFlags flags = { .multiview = multiview };
+  lovrCanvasInitFromHandle(&canvas, width, height, flags, framebuffer, 0, 0, 1, true);
 
   Camera camera = { .canvas = &canvas, .stereo = false };
-  memcpy(camera.viewMatrix[0], eyeViewMatrix, sizeof(camera.viewMatrix[0]));
-  mat4_translate(camera.viewMatrix[0], 0, -offset, 0);
 
-  memcpy(camera.projection[0], projectionMatrix, sizeof(camera.projection[0]));
+  if (multiview) {
+    mat4_init(camera.viewMatrix[0], bridgeLovrMobileData.updateData.eyeViewMatrix[0]);
+    mat4_init(camera.viewMatrix[1], bridgeLovrMobileData.updateData.eyeViewMatrix[1]);
+    mat4_init(camera.projection[0], bridgeLovrMobileData.updateData.projectionMatrix[0]);
+    mat4_init(camera.projection[1], bridgeLovrMobileData.updateData.projectionMatrix[1]);
+    mat4_translate(camera.viewMatrix[0], 0, -offset, 0);
+    mat4_translate(camera.viewMatrix[1], 0, -offset, 0);
+  } else {
+    mat4_init(camera.viewMatrix[0], eyeViewMatrix);
+    mat4_init(camera.projection[0], projectionMatrix);
+    mat4_translate(camera.viewMatrix[0], 0, -offset, 0);
+  }
 
   lovrGraphicsSetCamera(&camera, true);
 
@@ -426,7 +436,7 @@ static void lovrOculusMobileDraw(int framebuffer, int width, int height, float *
 
 void bridgeLovrDraw(BridgeLovrDrawData *drawData) {
   int eye = drawData->eye;
-  lovrOculusMobileDraw(drawData->framebuffer, bridgeLovrMobileData.displayDimensions.width, bridgeLovrMobileData.displayDimensions.height,
+  lovrOculusMobileDraw(drawData->framebuffer, drawData->multiview, bridgeLovrMobileData.displayDimensions.width, bridgeLovrMobileData.displayDimensions.height,
     bridgeLovrMobileData.updateData.eyeViewMatrix[eye], bridgeLovrMobileData.updateData.projectionMatrix[eye]); // Is this indexing safe?
 }
 

@@ -1866,11 +1866,11 @@ static void lovrShaderSetupUniforms(Shader* shader) {
 
 Shader* lovrShaderInitGraphics(Shader* shader, const char* vertexSource, const char* fragmentSource) {
 #if defined(LOVR_WEBGL) || defined(LOVR_GLES)
-  const char* vertexHeader = "#version 300 es\nprecision mediump float;\nprecision mediump int;\n";
-  const char* fragmentHeader = vertexHeader;
+  const char* version = "#version 300 es\n";
+  const char* precision = "precision mediump float;\nprecision mediump int;\n";
 #else
-  const char* vertexHeader = state.features.compute ? "#version 430\n" : "#version 150\n";
-  const char* fragmentHeader = "#version 150\n";
+  const char* version = state.features.compute ? "#version 430\n" : "#version 150\n";
+  const char* precision = "";
 #endif
 
 #ifdef LOVR_GL
@@ -1888,12 +1888,12 @@ Shader* lovrShaderInitGraphics(Shader* shader, const char* vertexSource, const c
 
   // Vertex
   vertexSource = vertexSource == NULL ? lovrDefaultVertexShader : vertexSource;
-  const char* vertexSources[] = { vertexHeader, vertexSinglepass, lovrShaderVertexPrefix, vertexSource, lovrShaderVertexSuffix };
+  const char* vertexSources[] = { version, vertexSinglepass, precision, lovrShaderVertexPrefix, vertexSource, lovrShaderVertexSuffix };
   GLuint vertexShader = compileShader(GL_VERTEX_SHADER, vertexSources, sizeof(vertexSources) / sizeof(vertexSources[0]));
 
   // Fragment
   fragmentSource = fragmentSource == NULL ? lovrDefaultFragmentShader : fragmentSource;
-  const char* fragmentSources[] = { fragmentHeader, fragmentSinglepass, lovrShaderFragmentPrefix, fragmentSource, lovrShaderFragmentSuffix };
+  const char* fragmentSources[] = { version, fragmentSinglepass, precision, lovrShaderFragmentPrefix, fragmentSource, lovrShaderFragmentSuffix };
   GLuint fragmentShader = compileShader(GL_FRAGMENT_SHADER, fragmentSources, sizeof(fragmentSources) / sizeof(fragmentSources[0]));
 
   // Link
