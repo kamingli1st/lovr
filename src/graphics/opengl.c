@@ -588,15 +588,19 @@ static void lovrGpuBindCanvas(Canvas* canvas, bool willDraw) {
     int slice = attachment->slice;
     int level = attachment->level;
 
-    if (canvas->flags.msaa) {
-      glFramebufferRenderbuffer(GL_FRAMEBUFFER, buffer, GL_RENDERBUFFER, texture->msaaId);
-    }
+    if (canvas->flags.multiview) {
+      glFramebufferTextureMultiviewOVR(GL_READ_FRAMEBUFFER, buffer, texture->id, level, slice, 2);
+    } else {
+      if (canvas->flags.msaa > 0) {
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, buffer, GL_RENDERBUFFER, texture->msaaId);
+      }
 
-    switch (texture->type) {
-      case TEXTURE_2D: glFramebufferTexture2D(GL_READ_FRAMEBUFFER, buffer, GL_TEXTURE_2D, texture->id, level); break;
-      case TEXTURE_CUBE: glFramebufferTexture2D(GL_READ_FRAMEBUFFER, buffer, GL_TEXTURE_CUBE_MAP_POSITIVE_X + slice, texture->id, level); break;
-      case TEXTURE_ARRAY: glFramebufferTextureLayer(GL_READ_FRAMEBUFFER, buffer, texture->id, level, slice); break;
-      case TEXTURE_VOLUME: glFramebufferTextureLayer(GL_READ_FRAMEBUFFER, buffer, texture->id, level, slice); break;
+      switch (texture->type) {
+        case TEXTURE_2D: glFramebufferTexture2D(GL_READ_FRAMEBUFFER, buffer, GL_TEXTURE_2D, texture->id, level); break;
+        case TEXTURE_CUBE: glFramebufferTexture2D(GL_READ_FRAMEBUFFER, buffer, GL_TEXTURE_CUBE_MAP_POSITIVE_X + slice, texture->id, level); break;
+        case TEXTURE_ARRAY: glFramebufferTextureLayer(GL_READ_FRAMEBUFFER, buffer, texture->id, level, slice); break;
+        case TEXTURE_VOLUME: glFramebufferTextureLayer(GL_READ_FRAMEBUFFER, buffer, texture->id, level, slice); break;
+      }
     }
   }
   glDrawBuffers(canvas->attachmentCount, buffers);
@@ -1433,6 +1437,7 @@ void lovrTextureSetWrap(Texture* texture, TextureWrap wrap) {
 // Canvas
 
 Canvas* lovrCanvasInit(Canvas* canvas, int width, int height, CanvasFlags flags) {
+  lovrAssert(!flags.multiview || GLAD_GL_OVR_multiview, "Multiview Canvases are not supported on this system");
   canvas->width = width;
   canvas->height = height;
   canvas->flags = flags;
@@ -1443,7 +1448,12 @@ Canvas* lovrCanvasInit(Canvas* canvas, int width, int height, CanvasFlags flags)
   if (flags.depth.enabled) {
     lovrAssert(isTextureFormatDepth(flags.depth.format), "Canvas depth buffer can't use a color TextureFormat");
     GLenum attachment = flags.depth.format == FORMAT_D24S8 ? GL_DEPTH_STENCIL_ATTACHMENT : GL_DEPTH_ATTACHMENT;
-    if (flags.depth.readable) {
+    if (flags.multiview) {
+      // lovrAssert MSAA
+      canvas->depth.texture = lovrTextureCreate(TEXTURE_ARRAY, NULL, 0, false, flags.mipmaps, flags.msaa);
+      lovrTextureAllocate(canvas->depth.texture, width, height, 2, flags.depth.format);
+      glFramebufferTextureMultiviewOVR(GL_FRAMEBUFFER, attachment, canvas->depth.texture->id, 0, 0, 2);
+    } else if (flags.depth.readable) {
       canvas->depth.texture = lovrTextureCreate(TEXTURE_2D, NULL, 0, false, flags.mipmaps, flags.msaa);
       lovrTextureAllocate(canvas->depth.texture, width, height, 1, flags.depth.format);
       glFramebufferTexture2D(GL_FRAMEBUFFER, attachment, GL_TEXTURE_2D, canvas->depth.texture->id, 0);
