@@ -155,6 +155,12 @@ const char* lovrFillVertexShader = ""
 "  return vertex; \n"
 "}";
 
+const char* lovrMultiviewBlitFragmentShader = ""
+"uniform sampler2DArray multiviewTexture; \n"
+"vec4 color(vec4 graphicsColor, sampler2D image, vec2 uv) { \n"
+"  return texture(multiviewTexture, vec3(uv.u * 2., uv.v * 1., round(uv.x))); \n"
+"}";
+
 const char* lovrShaderScalarUniforms[] = {
   "lovrMetalness",
   "lovrRoughness"

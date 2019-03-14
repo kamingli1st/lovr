@@ -3,6 +3,7 @@
 #include <GLES2/gl2ext.h>
 #include <GL/gl.h>
 #include <GL/glext.h>
+#include <emscripten/html5.h>
 #else
 #include "lib/glad/glad.h"
 #endif

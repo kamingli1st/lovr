@@ -1,6 +1,8 @@
 #include "headset/headset.h"
 #include "event/event.h"
 #include "graphics/graphics.h"
+#include "graphics/canvas.h"
+#include "resources/shaders.h"
 #include "lib/vec/vec.h"
 #include <stdbool.h>
 
@@ -34,6 +36,9 @@ extern void webvrUpdate(float dt);
 typedef struct {
   vec_controller_t controllers;
   void (*renderCallback)(void*);
+  Canvas* canvas;
+  Canvas* blitCanvas;
+  Shader* blitShader;
 } HeadsetState;
 
 static HeadsetState state;
@@ -92,9 +97,49 @@ static void onFrame(float* leftView, float* rightView, float* leftProjection, fl
   memcpy(camera.projection[1], rightProjection, 16 * sizeof(float));
   memcpy(camera.viewMatrix[0], leftView, 16 * sizeof(float));
   memcpy(camera.viewMatrix[1], rightView, 16 * sizeof(float));
+
+  if (lovrGraphicsGetFeatures()->multiview) {
+    uint32_t width, height;
+    webvrGetDisplayDimensions(&width, &height);
+
+    if (!state.canvas) {
+      Texture* texture = lovrTextureCreate(TEXTURE_ARRAY, NULL, 0, false, false, 0);
+      lovrTextureAllocate(texture, width, height, 2, FORMAT_RGBA);
+      lovrTextureSetFilter(texture, lovrGraphicsGetDefaultFilter());
+
+      CanvasFlags flags = { .multiview = lovrGraphicsGetFeatures()->multiview };
+      state.canvas = lovrCanvasCreate(width, height, flags);
+      lovrCanvasSetAttachments(state.canvas, &(Attachment) { texture, 0, 0 }, 1);
+
+      state.blitCanvas = lovrCanvasCreate();
+      lovrCanvasSetAttachments(state.blitCanvas, (Attachments[]) { { texture, 0, 0 }, { texture, 1, 0 } }, 2);
+
+      lovrRelease(texture);
+
+      const char* vertexSource = lovrFillVertexShader;
+      const char* fragmentSource = ""
+        "uniform sampler2DArray lovrMultiviewTexture; \n"
+        "vec4 color(vec4 graphicsColor, sampler2D image, vec2 uv) { \n"
+        "  return texture(lovrMultiviewTexture, vec3(uv.x * 2., uv.y, round(uv.x))); \n"
+        "}";
+
+      state.blitShader = lovrShaderCreate(vertexSource, fragmentSource);
+      lovrShaderSetTextures(state.blitShader, "lovrMultiviewTexture", &texture, 0, 1);
+    }
+
+    camera.canvas = state.canvas;
+  }
+
   lovrGraphicsSetCamera(&camera, true);
   state.renderCallback(userdata);
   lovrGraphicsSetCamera(NULL, false);
+
+  if (lovrGraphicsGetFeatures()->multiview) {
+    Shader* shader = lovrGraphicsGetShader();
+    lovrGraphicsSetShader(state.blitShader);
+    lovrGraphicsFill(NULL, 0.f, 0.f, 1.f, 1.f);
+    lovrGraphicsSetShader(shader);
+  }
 }
 
 static bool webvrDriverInit(float offset, int msaa) {
@@ -111,6 +156,9 @@ static bool webvrDriverInit(float offset, int msaa) {
 static void webvrDriverDestroy() {
   webvrDestroy();
   vec_deinit(&state.controllers);
+  lovrRelease(state.canvas);
+  lovrRelease(state.blitCanvas);
+  lovrRelease(state.blitShader);
   memset(&state, 0, sizeof(HeadsetState));
 }
 

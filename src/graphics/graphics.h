@@ -283,6 +283,7 @@ void lovrGraphicsFill(struct Texture* texture, float u, float v, float w, float 
 
 typedef struct {
   bool compute;
+  bool multiview;
   bool singlepass;
 } GpuFeatures;
 
