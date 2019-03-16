@@ -589,7 +589,12 @@ static void lovrGpuBindCanvas(Canvas* canvas, bool willDraw) {
     int level = attachment->level;
 
     if (canvas->flags.multiview) {
+#ifdef LOVR_WEBGL
+      lovrAssert(canvas->flags.msaa == 0, "Multiview Canvases do not support MSAA on this platform");
       glFramebufferTextureMultiviewOVR(GL_READ_FRAMEBUFFER, buffer, texture->id, level, slice, 2);
+#else
+      glFramebufferTextureMultisampleMultiviewOVR(GL_READ_FRAMEBUFFER, buffer, texture->id, level, canvas->flags.msaa, slice, 2);
+#endif
     } else {
       if (canvas->flags.msaa > 0) {
         glFramebufferRenderbuffer(GL_FRAMEBUFFER, buffer, GL_RENDERBUFFER, texture->msaaId);
@@ -1454,7 +1459,12 @@ Canvas* lovrCanvasInit(Canvas* canvas, int width, int height, CanvasFlags flags)
     if (flags.multiview) {
       canvas->depth.texture = lovrTextureCreate(TEXTURE_ARRAY, NULL, 0, false, flags.mipmaps, flags.msaa);
       lovrTextureAllocate(canvas->depth.texture, width, height, 2, flags.depth.format);
+#ifdef LOVR_WEBGL
+      lovrAssert(flags.msaa == 0, "Multiview Canvases do not support MSAA on this platform");
+      glFramebufferTextureMultiviewOVR(GL_FRAMEBUFFER, attachment, canvas->depth.texture->id, 0, 0, 2);
+#else
       glFramebufferTextureMultisampleMultiviewOVR(GL_FRAMEBUFFER, attachment, canvas->depth.texture->id, 0, flags.msaa, 0, 2);
+#endif
     } else if (flags.depth.readable) {
       canvas->depth.texture = lovrTextureCreate(TEXTURE_2D, NULL, 0, false, flags.mipmaps, flags.msaa);
       lovrTextureAllocate(canvas->depth.texture, width, height, 1, flags.depth.format);
@@ -1878,7 +1888,7 @@ Shader* lovrShaderInitGraphics(Shader* shader, const char* vertexSource, const c
   const char* extensions[3] = {
     state.features.singlepass ? "#extension GL_AMD_vertex_shader_viewport_index : require\n#define SINGLEPASS\n" : "",
     state.features.singlepass ? "#extension GL_ARB_fragment_layer_viewport : require\n#define SINGLEPASS\n" : "",
-    state.features.multiview ? "#extension GL_OVR_multiview2 : require\n#define MULTIVIEW\n" : ""
+    state.features.multiview ? "#extension GL_OVR_multiview : require\n#define MULTIVIEW\n" : ""
   };
 
   // Vertex

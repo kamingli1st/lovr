@@ -1,4 +1,5 @@
-#if LOVR_WEBGL
+#ifdef LOVR_WEBGL
+#define GL_GLEXT_PROTOTYPES
 #include <GLES3/gl3.h>
 #include <GLES2/gl2ext.h>
 #include <GL/gl.h>

@@ -98,7 +98,7 @@ static void onFrame(float* leftView, float* rightView, float* leftProjection, fl
   memcpy(camera.viewMatrix[0], leftView, 16 * sizeof(float));
   memcpy(camera.viewMatrix[1], rightView, 16 * sizeof(float));
 
-  if (lovrGraphicsGetFeatures()->multiview) {
+  if (lovrGraphicsGetSupported()->multiview) {
     uint32_t width, height;
     webvrGetDisplayDimensions(&width, &height);
 
@@ -107,12 +107,13 @@ static void onFrame(float* leftView, float* rightView, float* leftProjection, fl
       lovrTextureAllocate(texture, width, height, 2, FORMAT_RGBA);
       lovrTextureSetFilter(texture, lovrGraphicsGetDefaultFilter());
 
-      CanvasFlags flags = { .multiview = lovrGraphicsGetFeatures()->multiview };
+      CanvasFlags flags = { .multiview = lovrGraphicsGetSupported()->multiview };
       state.canvas = lovrCanvasCreate(width, height, flags);
       lovrCanvasSetAttachments(state.canvas, &(Attachment) { texture, 0, 0 }, 1);
 
-      state.blitCanvas = lovrCanvasCreate();
-      lovrCanvasSetAttachments(state.blitCanvas, (Attachments[]) { { texture, 0, 0 }, { texture, 1, 0 } }, 2);
+      flags = (CanvasFlags) { 0 };
+      state.blitCanvas = lovrCanvasCreate(width, height, flags);
+      lovrCanvasSetAttachments(state.blitCanvas, (Attachment[]) { { texture, 0, 0 }, { texture, 1, 0 } }, 2);
 
       lovrRelease(texture);
 
@@ -123,7 +124,7 @@ static void onFrame(float* leftView, float* rightView, float* leftProjection, fl
         "  return texture(lovrMultiviewTexture, vec3(uv.x * 2., uv.y, round(uv.x))); \n"
         "}";
 
-      state.blitShader = lovrShaderCreate(vertexSource, fragmentSource);
+      state.blitShader = lovrShaderCreateGraphics(vertexSource, fragmentSource);
       lovrShaderSetTextures(state.blitShader, "lovrMultiviewTexture", &texture, 0, 1);
     }
 
@@ -134,7 +135,7 @@ static void onFrame(float* leftView, float* rightView, float* leftProjection, fl
   state.renderCallback(userdata);
   lovrGraphicsSetCamera(NULL, false);
 
-  if (lovrGraphicsGetFeatures()->multiview) {
+  if (lovrGraphicsGetSupported()->multiview) {
     Shader* shader = lovrGraphicsGetShader();
     lovrGraphicsSetShader(state.blitShader);
     lovrGraphicsFill(NULL, 0.f, 0.f, 1.f, 1.f);
