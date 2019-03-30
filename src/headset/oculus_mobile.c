@@ -238,7 +238,6 @@ bool lovrPlatformHasWindow() {
 
 #include "api.h"
 #include "lib/lua-cjson/lua_cjson.h"
-#include "lib/lua-enet/enet.h"
 #include "headset/oculus_mobile.h"
 
 // Implicit from boot.lua.h

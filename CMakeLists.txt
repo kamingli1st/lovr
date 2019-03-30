@@ -13,7 +13,6 @@ option(LOVR_ENABLE_PHYSICS "Enable the physics module" ON)
 option(LOVR_ENABLE_THREAD "Enable the thread module" ON)
 option(LOVR_ENABLE_TIMER "Enable the timer module" ON)
 
-option(LOVR_ENABLE_ENET "Bundle with lua-enet" ON)
 option(LOVR_ENABLE_JSON "Bundle with lua-cjson" ON)
 
 option(LOVR_USE_LUAJIT "Use LuaJIT instead of Lua" ON)
@@ -25,7 +24,6 @@ option(LOVR_USE_DESKTOP_HEADSET "Enable the keyboard/mouse backend for the heads
 option(LOVR_USE_SSE "Enable SIMD use of intrinsics" ON)
 
 option(LOVR_SYSTEM_PHYSFS "Use the system-provided PhysFS" OFF)
-option(LOVR_SYSTEM_ENET "Use the system-provided enet" OFF)
 option(LOVR_SYSTEM_GLFW "Use the system-provided glfw" OFF)
 option(LOVR_SYSTEM_LUA "Use the system-provided Lua" OFF)
 option(LOVR_SYSTEM_ODE "Use the system-provided ODE" OFF)
@@ -101,28 +99,6 @@ if(LOVR_ENABLE_FILESYSTEM)
     add_subdirectory(deps/physfs physfs)
     include_directories(deps/physfs/src)
     set(LOVR_PHYSFS physfs)
-  endif()
-endif()
-
-# enet
-if(LOVR_ENABLE_ENET)
-  if(LOVR_SYSTEM_ENET)
-    pkg_search_module(ENET REQUIRED enet)
-    include_directories(${ENET_INCLUDE_DIRS})
-    set(LOVR_ENET ${ENET_LIBRARIES})
-  else()
-    if(EMSCRIPTEN)
-      set(HAVE_HAS_SOCKLEN_T TRUE CACHE BOOL "")
-    endif()
-    add_subdirectory(deps/enet enet)
-    include_directories(deps/enet/include)
-    set(LOVR_ENET enet)
-    if(WIN32)
-      set(LOVR_ENET ${LOVR_ENET} ws2_32 winmm)
-    endif()
-    if(EMSCRIPTEN)
-      target_compile_definitions(enet PRIVATE __APPLE__)
-    endif()
   endif()
 endif()
 
@@ -317,7 +293,6 @@ endif()
 set_target_properties(lovr PROPERTIES C_STANDARD 99)
 target_include_directories(lovr PRIVATE src)
 target_link_libraries(lovr
-  ${LOVR_ENET}
   ${LOVR_GLFW}
   ${LOVR_LUA}
   ${LOVR_MSDF}
@@ -494,11 +469,6 @@ endif()
 if(LOVR_ENABLE_TIMER)
   add_definitions(-DLOVR_ENABLE_TIMER)
   target_sources(lovr PRIVATE src/timer/timer.c src/api/timer.c)
-endif()
-
-if(LOVR_ENABLE_ENET)
-  add_definitions(-DLOVR_ENABLE_ENET)
-  target_sources(lovr PRIVATE src/lib/lua-enet/enet.c)
 endif()
 
 if(LOVR_ENABLE_JSON)
