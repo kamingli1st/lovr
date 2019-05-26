@@ -8,6 +8,7 @@
 #include "graphics/texture.h"
 #include "resources/shaders.h"
 #include "data/modelData.h"
+#include "lib/map/map.h"
 #include "lib/vec/vec.h"
 #include <math.h>
 #include <limits.h>
@@ -45,6 +46,13 @@ typedef struct {
   size_t size;
 } BlockBuffer;
 
+typedef struct {
+  size_t next;
+  size_t oldest;
+  GLuint timers[4];
+  uint64_t ns;
+} TimerList;
+
 static struct {
   Texture* defaultTexture;
   bool alphaToCoverage;
@@ -74,6 +82,7 @@ static struct {
   float viewports[2][4];
   uint32_t viewportCount;
   vec_void_t incoherents[MAX_BARRIERS];
+  map_t(TimerList) timers;
   GpuFeatures features;
   GpuLimits limits;
   GpuStats stats;
@@ -1108,7 +1117,8 @@ void lovrGpuDraw(DrawCommand* draw) {
 }
 
 void lovrGpuPresent() {
-  memset(&state.stats, 0, sizeof(state.stats));
+  state.stats.drawCalls = state.stats.shaderSwitches = 0;
+  vec_clear(&state.stats.timers);
 #ifdef __APPLE__
   // For some reason instancing doesn't work on macOS unless you reset the shader every frame
   lovrGpuUseProgram(0);
@@ -1176,6 +1186,42 @@ void lovrGpuDestroyLock(void* lock) {
 #ifndef LOVR_WEBGL
   if (lock) glDeleteSync((GLsync) lock);
 #endif
+}
+
+void lovrGpuTick(const char* label) {
+  TimerList* timer = map_get(&state.timers, label);
+
+  if (!timer) {
+    map_set(&state.timers, label, ((TimerList) { 0 }));
+    timer = map_get(&state.timers, label);
+    glGenQueries(sizeof(timer->timers) / sizeof(timer->timers[0]), timer->timers);
+  }
+
+  glBeginQuery(GL_TIME_ELAPSED, timer->timers[timer->next]);
+
+  size_t next = (timer->next + 1) % 4;
+  if (next != timer->oldest) {
+    timer->next = next;
+  }
+}
+
+void lovrGpuTock(const char* label) {
+  TimerList* timer = map_get(&state.timers, label);
+  if (!timer) return;
+
+  glEndQuery(GL_TIME_ELAPSED);
+
+  while (timer->oldest != timer->next) {
+    GLuint available;
+    glGetQueryObjectuiv(timer->timers[timer->oldest], GL_QUERY_RESULT_AVAILABLE, &available);
+    if (!available) {
+      break;
+    }
+
+    glGetQueryObjectui64v(timer->timers[timer->oldest], GL_QUERY_RESULT, &timer->ns);
+    vec_push(&state.stats.timers, ((GpuTimer) { .label = label, .time = timer->ns / 1e9 }));
+    timer->oldest = (timer->oldest + 1) % 4;
+  }
 }
 
 const GpuFeatures* lovrGpuGetFeatures() {
